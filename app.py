@@ -12,14 +12,19 @@ Chạy local để test:
 import os
 import sys
 import tempfile
-
-from dotenv import load_dotenv
 import streamlit as st
 
-# Đọc GOOGLE_API_KEY từ file .env khi chạy local (BTC trên server vẫn dùng biến môi trường).
-load_dotenv(override=True)
+# Thử load file .env khi chạy ở máy local; trên Cloud sẽ tự động bỏ qua nếu không có thư viện/file .env
+try:
+    from dotenv import load_dotenv
+    load_dotenv(override=True)
+except ImportError:
+    pass
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Lấy API Key: Ưu tiên lấy từ Streamlit Secrets, nếu không có mới lấy từ os.environ (.env)
+api_key = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
 from core.file_parser import read_input_file  # noqa: E402
 from core.pipeline import run_pipeline  # noqa: E402
