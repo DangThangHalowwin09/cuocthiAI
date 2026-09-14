@@ -2,30 +2,10 @@
 Xuất văn bản kết quả (Cáo trạng / Phát biểu của Kiểm sát viên) ra file
 .docx ĐÚNG THỂ THỨC theo Phụ lục I, Nghị định số 30/2020/NĐ-CP ngày
 05/3/2020 của Chính phủ về công tác văn thư.
-
-Các quy định chính đã áp dụng (trích Phụ lục I):
-- Khổ A4; lề trên/dưới 20-25mm, trái 30-35mm, phải 15-20mm
-- Phông chữ Times New Roman, bộ mã Unicode, màu đen
-- Quốc hiệu: in hoa, cỡ 12-13, đứng, đậm
-- Tiêu ngữ: in thường, cỡ 13-14, đứng, đậm, có gạch chân bằng độ dài dòng
-- Tên cơ quan ban hành: in hoa, cỡ 12-13, đứng, đậm, có gạch chân 1/3-1/2 dòng
-- Số, ký hiệu: "Số" in thường cỡ 13; ký hiệu in hoa cỡ 13, đứng
-- Địa danh, ngày tháng: in thường, cỡ 13-14, NGHIÊNG
-- Tên loại văn bản: in hoa, cỡ 13-14, đứng, đậm, canh giữa
-- Trích yếu: in thường, cỡ 13-14, đứng, đậm, canh giữa, có gạch chân 1/3-1/2 dòng
-- Căn cứ ban hành: in thường, NGHIÊNG, cỡ 13-14
-- Nội dung văn bản: in thường, cỡ 13-14, đứng
-- Chức vụ người ký: in hoa, đứng, đậm, cỡ 13-14, canh giữa
-- Nơi nhận: "Nơi nhận:" nghiêng đậm cỡ 12; danh sách thường cỡ 11
-- Dòng cách: dòng đơn (tối thiểu theo quy định; tối đa cho phép 1.5 dòng)
-
-LƯU Ý: đây là bản triển khai bám sát Phụ lục I ở mức độ khung thể thức
-chính. Trước khi dùng chính thức, nên đối chiếu trực quan với 1 văn bản
-mẫu đã có sẵn của đơn vị để tinh chỉnh thêm nếu cần.
 """
 
 from docx import Document
-from docx.shared import Pt, Mm
+from docx.shared import Pt, Mm, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
@@ -46,7 +26,7 @@ SUBTITLES = {
 
 def _set_font(run, size: int, bold: bool = False, italic: bool = False):
     run.font.name = FONT_NAME
-    # Đảm bảo áp dụng đúng font cho cả ký tự Đông Á (một số bản Word cần dòng này)
+    # Đảm bảo áp dụng đúng font cho cả ký tự Đông Á
     rpr = run._element.get_or_add_rPr()
     rfonts = rpr.find(qn("w:rFonts"))
     if rfonts is None:
@@ -64,18 +44,17 @@ def _add_run(paragraph, text: str, size: int, bold: bool = False, italic: bool =
     return run
 
 
-def _set_single_spacing(paragraph, space_after: int = 0, space_before: int = 0):
+def _set_single_spacing(paragraph, space_after: int = 0, space_before: int = 0, indent: bool = False):
     pf = paragraph.paragraph_format
     pf.line_spacing = 1.0
     pf.space_after = Pt(space_after)
     pf.space_before = Pt(space_before)
+    if indent:
+        pf.first_line_indent = Cm(1.27)  # Thụt lề đầu dòng chuẩn 1.27 cm (0.5 inch)
 
 
-def _add_bottom_border(paragraph, width_pct: int = 100):
-    """Thêm đường kẻ ngang bên dưới đoạn văn (dùng cho Tiêu ngữ, tên cơ
-    quan ban hành, trích yếu — theo đúng yêu cầu 'phía dưới có đường kẻ
-    ngang, nét liền' của Phụ lục I). width_pct: độ dài tương đối bằng
-    cách thụt lề 2 bên để tạo cảm giác đường kẻ ngắn hơn dòng chữ."""
+def _add_bottom_border(paragraph):
+    """Thêm đường kẻ ngang bên dưới đoạn văn."""
     p_el = paragraph._p
     pPr = p_el.get_or_add_pPr()
     pBdr = OxmlElement("w:pBdr")
@@ -99,26 +78,22 @@ def _set_margins(doc: Document):
 
 
 def _add_header_table(doc: Document, unit_name: str, unit_parent: str, so_ky_hieu: str, dia_danh_ngay: str):
-    """Bảng 2 cột không viền: trái = tên cơ quan, phải = Quốc hiệu/Tiêu
-    ngữ — đúng bố cục truyền thống của văn bản hành chính Việt Nam."""
     table = doc.add_table(rows=1, cols=2)
     table.autofit = True
     left_cell, right_cell = table.rows[0].cells
 
-    # Xóa viền bảng (mặc định python-docx table có thể không viền sẵn,
-    # nhưng đảm bảo chắc chắn bằng cách set border None qua style)
     table.style = None
 
     # --- CỘT TRÁI: tên cơ quan chủ quản + tên cơ quan ban hành + số ký hiệu ---
     p1 = left_cell.paragraphs[0]
     p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
     _set_single_spacing(p1)
-    _add_run(p1, unit_parent, size=13, bold=False)
+    _add_run(p1, unit_parent, size=12, bold=False)
 
     p2 = left_cell.add_paragraph()
     p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
     _set_single_spacing(p2)
-    _add_run(p2, unit_name, size=13, bold=True)
+    _add_run(p2, unit_name, size=12, bold=True)
     _add_bottom_border(p2)
 
     p3 = left_cell.add_paragraph()
@@ -130,18 +105,18 @@ def _add_header_table(doc: Document, unit_name: str, unit_parent: str, so_ky_hie
     q1 = right_cell.paragraphs[0]
     q1.alignment = WD_ALIGN_PARAGRAPH.CENTER
     _set_single_spacing(q1)
-    _add_run(q1, "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", size=13, bold=True)
+    _add_run(q1, "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", size=12, bold=True)
 
     q2 = right_cell.add_paragraph()
     q2.alignment = WD_ALIGN_PARAGRAPH.CENTER
     _set_single_spacing(q2)
-    _add_run(q2, "Độc lập - Tự do - Hạnh phúc", size=14, bold=True)
+    _add_run(q2, "Độc lập - Tự do - Hạnh phúc", size=13, bold=True)
     _add_bottom_border(q2)
 
     q3 = right_cell.add_paragraph()
     q3.alignment = WD_ALIGN_PARAGRAPH.CENTER
     _set_single_spacing(q3)
-    _add_run(q3, dia_danh_ngay, size=14, italic=True)
+    _add_run(q3, dia_danh_ngay, size=13, italic=True)
 
     return table
 
@@ -157,18 +132,17 @@ def write_result_docx(
     doc = Document()
     _set_margins(doc)
 
-    # Font mặc định cho toàn tài liệu (phòng khi có đoạn không set font riêng)
     normal_style = doc.styles["Normal"]
     normal_style.font.name = FONT_NAME
     normal_style.font.size = Pt(14)
 
     ky_hieu = "CT" if case_type == "HINH_SU" else ("PB-HC" if is_hanh_chinh else "PB")
-    so_ky_hieu = f"Số: ..../{ky_hieu}-VKS...-..."
-    dia_danh_ngay = "......., ngày .... tháng .... năm 20...."
+    so_ky_hieu = f"Số: ..../{ky_hieu}-VKS..."
+    dia_danh_ngay = "Nghệ An, ngày .... tháng .... năm 20...."
 
     _add_header_table(doc, unit_name, unit_parent, so_ky_hieu, dia_danh_ngay)
 
-    doc.add_paragraph()  # dòng trống trước tên loại văn bản
+    doc.add_paragraph()  # dòng trống
 
     # --- TÊN LOẠI VĂN BẢN ---
     title_text = TITLES.get(case_type, "VĂN BẢN")
@@ -177,7 +151,7 @@ def write_result_docx(
     _set_single_spacing(p_title)
     _add_run(p_title, title_text, size=14, bold=True)
 
-    # --- TRÍCH YẾU (subtitle, chỉ áp dụng cho Phát biểu) ---
+    # --- TRÍCH YẾU (nếu có) ---
     subtitle_key = "HANH_CHINH" if is_hanh_chinh else ("DAN_SU" if case_type != "HINH_SU" else None)
     subtitle = SUBTITLES.get(subtitle_key) if subtitle_key else None
     if subtitle:
@@ -185,35 +159,33 @@ def write_result_docx(
         p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
         _set_single_spacing(p_sub)
         _add_run(p_sub, subtitle, size=14, bold=True)
-        _add_bottom_border(p_sub, width_pct=50)
 
     doc.add_paragraph()  # dòng trống trước nội dung
 
     # --- NỘI DUNG VĂN BẢN ---
-    # "Căn cứ..." trình bày nghiêng theo quy định; các đoạn khác trình
-    # bày đứng. Nhận diện dòng "Căn cứ" bằng tiền tố để áp dụng nghiêng.
     for line in final_text.split("\n"):
         line = line.strip()
         if not line:
-            doc.add_paragraph()
             continue
 
         p = doc.add_paragraph()
-        _set_single_spacing(p, space_after=6)
         is_can_cu = line.startswith("Căn cứ")
-        # Các dòng tiêu đề mục lớn (I., II., III., KẾT LUẬN, QUYẾT ĐỊNH)
         is_section_header = (
             line.upper() == line and len(line) < 60 and any(c.isalpha() for c in line)
         )
+
         if is_section_header:
             p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            _set_single_spacing(p, space_before=6, space_after=6, indent=False)
             _add_run(p, line, size=14, bold=True)
         else:
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY  # Căn đều 2 bên chuẩn văn bản hành chính
+            _set_single_spacing(p, space_after=6, indent=True)  # Thụt lề đầu dòng
             _add_run(p, line, size=14, italic=is_can_cu)
 
     doc.add_paragraph()
 
-    # --- CHỨC VỤ, HỌ TÊN NGƯỜI KÝ + NƠI NHẬN (2 cột) ---
+    # --- CHỨC VỤ, HỌ TÊN NGƯỜI KÝ + NƠI NHẬN ---
     footer_table = doc.add_table(rows=1, cols=2)
     footer_table.autofit = True
     nhan_cell, ky_cell = footer_table.rows[0].cells
@@ -233,7 +205,7 @@ def write_result_docx(
     chuc_danh = "VIỆN TRƯỞNG" if case_type == "HINH_SU" else "KIỂM SÁT VIÊN"
     _add_run(p_ky_title, chuc_danh, size=14, bold=True)
 
-    for _ in range(4):
+    for _ in range(3):
         ky_cell.add_paragraph()
 
     p_ten = ky_cell.add_paragraph()
