@@ -137,7 +137,8 @@ if run_clicked and uploaded_file is not None:
         st.error(f"Lỗi: {e}")
         st.stop()
 
-    st.success(f"Đã soạn xong bản thảo — loại vụ việc: **{('Hình sự' if result['case_type']=='HINH_SU' else 'Dân sự / Hành chính')}**")
+    loai_hien_thi = "Hình sự" if result['case_type'] == 'HINH_SU' else ("Hành chính" if result.get('is_hanh_chinh') else "Dân sự / HNGĐ / KDTM / Lao động")
+    st.success(f"Đã soạn xong bản thảo — loại vụ việc: **{loai_hien_thi}**")
 
     tab_final, tab_facts, tab_laws, tab_draft = st.tabs(
         ["📌 Kết quả cuối", "🔍 Dữ kiện đã trích xuất", "⚖️ Điều luật tìm được", "📝 Bản thảo (trước kiểm tra)"]
@@ -152,7 +153,7 @@ if run_clicked and uploaded_file is not None:
         st.text_area("Bản thảo ban đầu", result["draft"], height=400)
 
     out_path = tmp_path + "_ket_qua.docx"
-    write_result_docx(result["final"], result["case_type"], out_path)
+    write_result_docx(result["final"], result["case_type"], out_path, is_hanh_chinh=result.get("is_hanh_chinh", False))
     with open(out_path, "rb") as f:
         st.download_button(
             "📥 Tải kết quả (.docx)",

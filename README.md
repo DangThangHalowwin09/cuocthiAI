@@ -76,12 +76,36 @@ khi dùng nguồn này.
 
 - **Cáo trạng**: Mẫu số 144/HS-15 (VKSTC ban hành) — bản đầy đủ, có
   hướng dẫn chi tiết từng phần.
-- **Phát biểu của Kiểm sát viên**: Mẫu số 36/DS (theo QĐ 195/QĐ-VKSTC
-  ngày 30/6/2026) — dùng cho dân sự, hôn nhân gia đình, kinh doanh
-  thương mại, lao động. Lưu ý: mẫu này không có ký hiệu riêng cho hành
-  chính (HC) — nếu đề thi là vụ án hành chính, cấu trúc 3 phần vẫn áp
-  dụng được nhưng nên kiểm tra kỹ hơn, vì có thể có mẫu số riêng cho
-  hành chính mà đội chưa cung cấp.
+- **Phát biểu của Kiểm sát viên (Dân sự/HNGĐ/KDTM/Lao động)**: Mẫu số
+  36/DS (QĐ 195/QĐ-VKSTC, 30/6/2026).
+- **Phát biểu của Kiểm sát viên (Hành chính)**: Mẫu số 35/HC (cùng QĐ
+  195/QĐ-VKSTC) — dùng căn cứ Luật Tố tụng hành chính thay vì BLTTDS.
+
+Hệ thống **tự động chọn đúng mẫu 35 hay 36** dựa vào trường
+`loai_vu_viec` được trích xuất ở Bước 2 (xem `core/pipeline.py`, hàm
+`_is_hanh_chinh`) — không cần người dùng chỉ định thủ công.
+
+## 4b. Định dạng đầu ra theo Nghị định 30/2020/NĐ-CP
+
+File `.docx` xuất ra tuân theo thể thức tại Phụ lục I, Nghị định
+30/2020/NĐ-CP về công tác văn thư (`core/docx_writer.py`):
+
+| Thành phần | Quy cách áp dụng |
+|---|---|
+| Khổ giấy, lề | A4; lề trên/dưới 20mm, trái 30mm, phải 20mm |
+| Phông chữ | Times New Roman, toàn bộ văn bản |
+| Quốc hiệu / Tiêu ngữ | In hoa/thường, đậm, cỡ 13/14, có gạch chân |
+| Tên cơ quan ban hành | In hoa, đậm, cỡ 13, có gạch chân ngắn |
+| Số, ký hiệu / Địa danh ngày tháng | Cỡ 13-14; địa danh-ngày tháng in NGHIÊNG |
+| Tên loại văn bản | In hoa, đậm, cỡ 14, canh giữa |
+| Phần "Căn cứ..." | In NGHIÊNG (đúng quy định) |
+| Nội dung | Cỡ 14, đứng |
+| Chức vụ người ký / Nơi nhận | 2 cột, đúng cỡ chữ quy định |
+
+⚠️ Đây là bản triển khai bám sát Phụ lục I ở mức khung thể thức chính.
+Nên đối chiếu trực quan với 1 văn bản mẫu thật của đơn vị trước khi
+dùng chính thức, để tinh chỉnh thêm nếu cần (ví dụ độ dài chính xác của
+đường gạch chân, khoảng cách dòng chi tiết hơn).
 
 ## 5. Cài đặt & chạy local (để test trước khi deploy)
 

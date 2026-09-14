@@ -55,13 +55,28 @@ def lookup_laws(facts_json: str, case_type: str, top_n: int = 10) -> str:
     return law_lookup.format_articles_for_prompt(result)
 
 
+def _is_hanh_chinh(facts_json: str) -> bool:
+    """Xác định vụ việc dân sự/hành chính có phải HÀNH CHÍNH cụ thể hay
+    không (để chọn đúng Mẫu 35/HC thay vì Mẫu 36/DS), dựa vào trường
+    loai_vu_viec đã trích xuất ở Bước 2."""
+    try:
+        facts = json.loads(facts_json)
+        loai = str(facts.get("loai_vu_viec", "")).strip().lower()
+        return "hành chính" in loai or "hanh chinh" in loai
+    except (json.JSONDecodeError, AttributeError):
+        return False
+
+
 def draft_document(facts_json: str, dieu_luat_lien_quan: str, case_type: str, provider: str = "gemini") -> str:
     if case_type == "HINH_SU":
         template = pr.DRAFT_PROMPT_HS
         mau = pr.MAU_CAO_TRANG_THAM_CHIEU
+    elif _is_hanh_chinh(facts_json):
+        template = pr.DRAFT_PROMPT_DS
+        mau = pr.MAU_PHAT_BIEU_HANH_CHINH_THAM_CHIEU  # Mẫu 35/HC
     else:
         template = pr.DRAFT_PROMPT_DS
-        mau = pr.MAU_BAI_PHAT_BIEU_THAM_CHIEU
+        mau = pr.MAU_BAI_PHAT_BIEU_THAM_CHIEU  # Mẫu 36/DS
 
     prompt = template.format(
         facts_json=facts_json,
@@ -99,6 +114,8 @@ def run_pipeline(
     facts = extract_facts(input_text, case_type, provider)
     notify("extract", facts)
 
+    is_hc = case_type == "DAN_SU_HANH_CHINH" and _is_hanh_chinh(facts)
+
     dieu_luat_lien_quan = lookup_laws(facts, case_type)
     notify("lookup_laws", dieu_luat_lien_quan)
 
@@ -110,6 +127,7 @@ def run_pipeline(
 
     return {
         "case_type": case_type,
+        "is_hanh_chinh": is_hc,
         "facts": facts,
         "dieu_luat_lien_quan": dieu_luat_lien_quan,
         "draft": draft,

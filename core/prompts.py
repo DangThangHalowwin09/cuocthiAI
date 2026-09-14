@@ -259,6 +259,78 @@ Nơi nhận:                                          KIỂM SÁT VIÊN
 - Lưu: VT, HSKS.
 """
 
+# Mẫu Phát biểu của Kiểm sát viên tại phiên tòa HÀNH CHÍNH — Mẫu số
+# 35/HC (theo QĐ số 195/QĐ-VKSTC ngày 30/6/2026). Dùng riêng cho vụ án
+# hành chính, KHÁC với Mẫu 36/DS (dân sự/HNGĐ/KDTM/lao động) — căn cứ
+# pháp lý và một số chi tiết khác nhau (Luật TTHC thay vì BLTTDS).
+MAU_PHAT_BIEU_HANH_CHINH_THAM_CHIEU = """
+Mẫu số 35/HC (theo Quyết định số 195/QĐ-VKSTC ngày 30/6/2026)
+
+[VIỆN KIỂM SÁT NHÂN DÂN CẤP TRÊN]                       CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
+[VIỆN KIỂM SÁT NHÂN DÂN BAN HÀNH]                       Độc lập - Tự do - Hạnh phúc
+Số:.../PB-VKS-HC                                        [Địa danh], ngày... tháng... năm 20...
+
+PHÁT BIỂU
+Của Kiểm sát viên tại phiên tòa hành chính sơ thẩm
+
+Căn cứ Luật Tổ chức Viện kiểm sát nhân dân số 63/2014/QH13 đã được sửa
+đổi, bổ sung bởi Luật số 82/2025/QH15;
+
+Căn cứ các điều 25, 43,... Luật Tố tụng hành chính số 93/2015/QH13 đã
+được sửa đổi, bổ sung bởi Luật số 55/2019/QH14, Luật số 34/2024/QH15 và
+Luật số 85/2025/QH15. [Thủ tục thông thường: dẫn Điều 190 LTTHC; thủ
+tục rút gọn: dẫn Điều 249 LTTHC]
+
+Căn cứ Điều 28 Thông tư liên tịch số 08/2026/TTLT-VKSNDTC-TANDTC ngày
+10/3/2026 quy định việc phối hợp giữa Viện kiểm sát nhân dân và Tòa án
+nhân dân trong việc thi hành một số quy định của Luật Tố tụng hành chính.
+
+Hôm nay, Tòa án nhân dân... mở phiên tòa sơ thẩm giải quyết vụ án hành
+chính về... (ghi trích yếu khiếu kiện, ví dụ: Khiếu kiện quyết định thu
+hồi đất), giữa: [ghi đầy đủ thông tin đương sự và người tham gia tố
+tụng khác nếu có]
+
+Qua nghiên cứu hồ sơ vụ án, kết quả kiểm sát việc tuân theo pháp luật
+của Tòa án nhân dân... và tham gia phiên tòa hành chính sơ thẩm hôm
+nay, đại diện Viện kiểm sát nhân dân... phát biểu ý kiến như sau:
+
+I. VỀ VIỆC TUÂN THEO PHÁP LUẬT TỐ TỤNG
+
+1. Việc tuân theo pháp luật tố tụng của Thẩm phán
+[Nêu rõ Thẩm phán được phân công thụ lý đã thực hiện đúng, đầy đủ hay
+chưa đúng quy định về thụ lý vụ án; xác minh thu thập tài liệu, chứng
+cứ; giao nộp/tiếp cận/công khai chứng cứ và đối thoại; áp dụng (thay
+đổi, hủy bỏ) biện pháp khẩn cấp tạm thời (nếu có). Nếu là thủ tục rút
+gọn thì bỏ phần nhận xét về Hội đồng xét xử ở mục 2.]
+
+2. Việc tuân theo pháp luật tố tụng của Hội đồng xét xử, Thư ký phiên tòa
+[Nêu rõ HĐXX, Thư ký đã thực hiện đúng, đầy đủ hay chưa đúng quy định
+của Luật Tố tụng hành chính về việc xét xử sơ thẩm]
+
+3. Việc chấp hành pháp luật của người tham gia tố tụng
+[Nêu rõ người khởi kiện, người bị kiện, người có quyền lợi nghĩa vụ
+liên quan và người tham gia tố tụng khác đã thực hiện đúng, đầy đủ
+quyền và nghĩa vụ tố tụng hay chưa]
+
+II. VỀ VIỆC GIẢI QUYẾT VỤ ÁN
+[Phân tích tính hợp pháp của quyết định hành chính/hành vi hành chính
+bị khiếu kiện, căn cứ pháp luật áp dụng, quan điểm của Viện kiểm sát về
+hướng giải quyết]
+
+III. YÊU CẦU, KIẾN NGHỊ KHẮC PHỤC VI PHẠM (NẾU CÓ)
+[Nếu phát hiện vi phạm tố tụng, nêu rõ tư cách tố tụng của người vi
+phạm, nội dung vi phạm, quy định bị vi phạm, tác động đến việc xét xử,
+và yêu cầu Hội đồng xét xử có biện pháp xử lý]
+
+Trên đây là ý kiến của đại diện Viện kiểm sát nhân dân... về việc tuân
+theo pháp luật tố tụng và giải quyết vụ án hành chính nêu trên.
+
+Nơi nhận:                                          KIỂM SÁT VIÊN
+- Tòa án xét xử sơ thẩm;                           (Ký tên, ghi rõ họ tên)
+- Lãnh đạo cơ quan, đơn vị phụ trách (để báo cáo);
+- Lưu: VT, HSKS.
+"""
+
 # ---------------------------------------------------------------------------
 # BƯỚC 3: SOẠN BẢN THẢO
 # ---------------------------------------------------------------------------
@@ -286,12 +358,15 @@ JSON có trường ghi "THIẾU DỮ LIỆU" ở mục quan trọng, phải th�
 
 DRAFT_PROMPT_DS = """Dựa trên dữ kiện JSON dưới đây, soạn bản thảo PHÁT BIỂU CỦA
 KIỂM SÁT VIÊN tại phiên tòa sơ thẩm, theo đúng thể thức mẫu tham chiếu
-(Mẫu số 36/DS). Cấu trúc bắt buộc:
+được cung cấp bên dưới (mẫu đã được chọn đúng theo loại vụ việc — dân
+sự/HNGĐ/KDTM/lao động dùng Mẫu 36/DS, hành chính dùng Mẫu 35/HC). Cấu
+trúc bắt buộc:
 
 I. VỀ VIỆC TUÂN THEO PHÁP LUẬT TỐ TỤNG (3 mục nhỏ: Thẩm phán; Hội đồng
    xét xử/Thư ký; người tham gia tố tụng)
 II. VỀ VIỆC GIẢI QUYẾT VỤ ÁN (phân tích chứng cứ, quan hệ pháp luật
-    tranh chấp, căn cứ pháp luật, quan điểm/đề nghị của VKS)
+    tranh chấp/tính hợp pháp của quyết định hành chính, căn cứ pháp
+    luật, quan điểm/đề nghị của VKS)
 III. YÊU CẦU, KIẾN NGHỊ KHẮC PHỤC VI PHẠM (NẾU CÓ)
 
 CHỈ trích dẫn điều luật có trong mục "ĐIỀU LUẬT LIÊN QUAN" bên dưới. Nếu
