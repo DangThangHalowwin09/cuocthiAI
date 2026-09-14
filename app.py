@@ -1,8 +1,8 @@
 """
 Giao diện Streamlit — Hệ thống AI hỗ trợ soạn thảo Cáo trạng (Hình sự).
 Chỉ dùng Google Gemini. API key đọc từ biến môi trường GOOGLE_API_KEY
-đã cấu hình sẵn trên server — người dùng cuối (Ban Tổ chức) KHÔNG cần
-nhập bất kỳ key nào, chỉ cần tải đề lên và bấm chạy.
+đã cấu hình sẵn trên server hoặc trong Streamlit Secrets — người dùng cuối 
+(Ban Tổ chức) KHÔNG cần nhập bất kỳ key nào, chỉ cần tải đề lên và bấm chạy.
 
 Chạy local để test:
     export GOOGLE_API_KEY="..."
@@ -14,7 +14,7 @@ import sys
 import tempfile
 import streamlit as st
 
-# Thử load file .env khi chạy ở máy local; trên Cloud sẽ tự động bỏ qua nếu không có thư viện/file .env
+# 1. Nạp file .env an toàn nếu chạy local (bỏ qua nếu thiếu thư viện trên Cloud)
 try:
     from dotenv import load_dotenv
     load_dotenv(override=True)
@@ -23,8 +23,19 @@ except ImportError:
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Lấy API Key: Ưu tiên lấy từ Streamlit Secrets, nếu không có mới lấy từ os.environ (.env)
-api_key = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+# 2. Đồng bộ lấy API Key từ Streamlit Secrets hoặc Biến môi trường hệ thống (.env)
+api_key = (
+    st.secrets.get("GOOGLE_API_KEY")
+    or st.secrets.get("GEMINI_API_KEY")
+    or os.environ.get("GOOGLE_API_KEY")
+    or os.environ.get("GEMINI_API_KEY")
+    or ""
+).strip().strip('"').strip("'")
+
+# Gán ngược lại vào môi trường hệ thống để các SDK tự động sử dụng
+if api_key:
+    os.environ["GOOGLE_API_KEY"] = api_key
+    os.environ["GEMINI_API_KEY"] = api_key
 
 from core.file_parser import read_input_file  # noqa: E402
 from core.pipeline import run_pipeline  # noqa: E402
@@ -43,20 +54,19 @@ st.title("⚖️ Hệ thống AI hỗ trợ soạn thảo văn bản tố tụng
 st.caption("VKSND tỉnh Nghệ An — Cuộc thi ứng dụng AI vào công tác chuyên môn, nghiệp vụ năm 2026")
 
 # ---------------------------------------------------------------------------
-# Kiểm tra cấu hình server — nếu quên cấu hình GOOGLE_API_KEY thì báo rõ
-# cho người vận hành (không hiển thị ô nhập key cho người dùng cuối).
+# Kiểm tra cấu hình server — nếu quên cấu hình Key thì báo rõ cho người vận hành
 # ---------------------------------------------------------------------------
-_api_key = (os.environ.get("GOOGLE_API_KEY") or "").strip().strip('"').strip("'")
 if (
-    not _api_key
-    or not _api_key.isascii()
-    or _api_key in {"PASTE_YOUR_KEY_HERE", "dán_key_vào_đây"}
+    not api_key
+    or not api_key.isascii()
+    or api_key in {"PASTE_YOUR_KEY_HERE", "dán_key_vào_đây"}
 ):
     st.error(
-        "Chưa gắn API key Gemini hợp lệ. Mở file `.env` trong thư mục project, "
-        "sửa dòng `GOOGLE_API_KEY=` thành key lấy từ "
-        "https://aistudio.google.com/apikey (thường bắt đầu bằng `AIza`), "
-        "**Ctrl+S lưu file**, rồi chạy lại `streamlit run app.py`."
+        "Chưa gắn API key Gemini hợp lệ. "
+        "Vui lòng cấu hình `GOOGLE_API_KEY` trong mục **Secrets** trên Streamlit Cloud "
+        "hoặc mở file `.env` trong thư mục project nếu chạy local, sửa dòng `GOOGLE_API_KEY=` "
+        "thành key lấy từ https://aistudio.google.com/apikey (thường bắt đầu bằng `AIza`), "
+        "**Ctrl+S lưu file**, rồi khởi chạy lại ứng dụng."
     )
     st.stop()
 
