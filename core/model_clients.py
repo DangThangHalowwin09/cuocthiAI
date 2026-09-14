@@ -86,9 +86,14 @@ def call_gemini(system_prompt: str, user_prompt: str, model: str = None,
             "Chưa cài thư viện 'google-genai'. Chạy: pip install -U google-genai"
         ) from e
 
-    api_key = os.environ.get("GOOGLE_API_KEY")
+    api_key = (os.environ.get("GOOGLE_API_KEY") or "").strip().strip('"').strip("'")
     if not api_key:
         raise ModelCallError("Thiếu GOOGLE_API_KEY trong biến môi trường.")
+    if api_key in {"PASTE_YOUR_KEY_HERE", "dán_key_vào_đây"} or not api_key.isascii():
+        raise ModelCallError(
+            "GOOGLE_API_KEY chưa phải key thật. Mở file .env, dán key từ "
+            "Google AI Studio (thường bắt đầu bằng AIza), lưu file, rồi chạy lại."
+        )
 
     client = genai.Client(api_key=api_key)
     try:

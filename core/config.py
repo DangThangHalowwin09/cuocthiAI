@@ -9,7 +9,7 @@ của Kiểm sát viên tại phiên tòa sơ thẩm).
 DEFAULT_MODELS = {
     "claude": "claude-sonnet-4-6",
     "openai": "gpt-4o",
-    "gemini": "gemini-2.5-flash-lite",
+    "gemini": "gemini-3.5-flash-lite",
 }
 
 # ---------------------------------------------------------------------------

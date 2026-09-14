@@ -13,7 +13,11 @@ import os
 import sys
 import tempfile
 
+from dotenv import load_dotenv
 import streamlit as st
+
+# Đọc GOOGLE_API_KEY từ file .env khi chạy local (BTC trên server vẫn dùng biến môi trường).
+load_dotenv(override=True)
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -37,11 +41,17 @@ st.caption("VKSND tỉnh Nghệ An — Cuộc thi ứng dụng AI vào công tá
 # Kiểm tra cấu hình server — nếu quên cấu hình GOOGLE_API_KEY thì báo rõ
 # cho người vận hành (không hiển thị ô nhập key cho người dùng cuối).
 # ---------------------------------------------------------------------------
-if not os.environ.get("GOOGLE_API_KEY"):
+_api_key = (os.environ.get("GOOGLE_API_KEY") or "").strip().strip('"').strip("'")
+if (
+    not _api_key
+    or not _api_key.isascii()
+    or _api_key in {"PASTE_YOUR_KEY_HERE", "dán_key_vào_đây"}
+):
     st.error(
-        "⚠️ Server chưa cấu hình GOOGLE_API_KEY. Đây là lỗi cấu hình phía "
-        "quản trị hệ thống, không phải lỗi của người dùng — vui lòng báo "
-        "cho đội kỹ thuật của cuộc thi."
+        "Chưa gắn API key Gemini hợp lệ. Mở file `.env` trong thư mục project, "
+        "sửa dòng `GOOGLE_API_KEY=` thành key lấy từ "
+        "https://aistudio.google.com/apikey (thường bắt đầu bằng `AIza`), "
+        "**Ctrl+S lưu file**, rồi chạy lại `streamlit run app.py`."
     )
     st.stop()
 
