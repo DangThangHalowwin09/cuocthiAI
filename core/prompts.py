@@ -334,8 +334,8 @@ Nơi nhận:                                          KIỂM SÁT VIÊN
 # ---------------------------------------------------------------------------
 # BƯỚC 3: SOẠN BẢN THẢO
 # ---------------------------------------------------------------------------
-DRAFT_PROMPT_HS = """Dựa trên dữ kiện JSON dưới đây, soạn bản thảo CÁO TRẠNG theo
-đúng thể thức mẫu tham chiếu (Mẫu số 144/HS-15). Cấu trúc bắt buộc:
+DRAFT_PROMPT_HS = """Dựa trên dữ kiện JSON dưới đây, soạn phần NỘI DUNG CÁO TRẠNG
+theo đúng cấu trúc mẫu tham chiếu. Cấu trúc bắt buộc:
 
 - Phần căn cứ (Quyết định khởi tố vụ án, khởi tố bị can, kết luận điều tra)
 - Phần diễn biến hành vi phạm tội, tình tiết tăng nặng/giảm nhẹ
@@ -345,6 +345,11 @@ DRAFT_PROMPT_HS = """Dựa trên dữ kiện JSON dưới đây, soạn bản th
 CHỈ trích dẫn điều luật có trong mục "ĐIỀU LUẬT LIÊN QUAN" bên dưới. Nếu
 JSON có trường ghi "THIẾU DỮ LIỆU" ở mục quan trọng, phải thể hiện rõ
 [THIẾU DỮ LIỆU: ...] tại đúng vị trí trong bản thảo, không tự bịa cho đủ.
+
+CHỈ xuất phần nội dung từ "Căn cứ..." đến hết phần "QUYẾT ĐỊNH". Không
+xuất quốc hiệu, tiêu ngữ, tên cơ quan, số ký hiệu, địa danh ngày tháng,
+tiêu đề CÁO TRẠNG, phần Nơi nhận, chức danh hoặc chữ ký; các phần đó đã
+được giữ nguyên trong template mẫu 156.
 
 --- MẪU THAM CHIẾU ---
 {mau_tham_chieu}

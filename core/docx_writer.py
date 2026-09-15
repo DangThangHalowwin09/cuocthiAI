@@ -4,9 +4,13 @@ Xuất văn bản kết quả (Cáo trạng / Phát biểu của Kiểm sát vi�
 05/3/2020 của Chính phủ về công tác văn thư.
 """
 
+import os
+from pathlib import Path
+
 from docx import Document
 from docx.shared import Pt, Mm, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.text.paragraph import Paragraph
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
@@ -22,6 +26,10 @@ SUBTITLES = {
     "DAN_SU": "Của Kiểm sát viên tại phiên tòa (phiên họp) sơ thẩm",
     "HANH_CHINH": "Của Kiểm sát viên tại phiên tòa hành chính sơ thẩm",
 }
+
+DEFAULT_TEMPLATE_PATH = (
+    Path(__file__).resolve().parents[1] / "data" / "templates" / "156-Cáo trạng.docx"
+)
 
 
 def _set_font(run, size: int, bold: bool = False, italic: bool = False):
@@ -77,6 +85,130 @@ def _set_margins(doc: Document):
     section.right_margin = Mm(20)
 
 
+def _iter_paragraphs(doc: Document):
+    yield from doc.paragraphs
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                yield from cell.paragraphs
+
+
+def _replace_template_token(doc: Document, token: str, value: str) -> bool:
+    replaced = False
+    for paragraph in _iter_paragraphs(doc):
+        if token in paragraph.text:
+            paragraph.text = paragraph.text.replace(token, value)
+            replaced = True
+    return replaced
+
+
+def _add_body_paragraph_after(marker: Paragraph, text: str) -> Paragraph:
+    paragraph_element = OxmlElement("w:p")
+    marker._p.addnext(paragraph_element)
+    paragraph = Paragraph(paragraph_element, marker._parent)
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    is_can_cu = text.startswith("Căn cứ")
+    is_section_header = (
+        text.upper() == text and len(text) < 60 and any(c.isalpha() for c in text)
+    )
+
+    if is_section_header:
+        _set_single_spacing(paragraph, space_before=6, space_after=6)
+        _add_run(paragraph, text, size=14, bold=True)
+    else:
+        _set_single_spacing(paragraph, space_after=6, indent=True)
+        _add_run(paragraph, text, size=14, italic=is_can_cu)
+    return paragraph
+
+
+def _remove_paragraph(paragraph: Paragraph):
+    paragraph._element.getparent().remove(paragraph._element)
+
+
+def _replace_sample_body(doc: Document, final_text: str) -> bool:
+    paragraphs = list(doc.paragraphs)
+    start_index = next(
+        (
+            index
+            for index, paragraph in enumerate(paragraphs)
+            if paragraph.text.strip().startswith("Căn cứ các điều")
+        ),
+        None,
+    )
+    end_index = next(
+        (
+            index
+            for index, paragraph in enumerate(paragraphs)
+            if paragraph.text.strip().startswith("……………………")
+        ),
+        None,
+    )
+    if start_index is None or end_index is None or start_index >= end_index:
+        return False
+
+    anchor = paragraphs[start_index - 1]
+    for paragraph in paragraphs[start_index : end_index + 1]:
+        _remove_paragraph(paragraph)
+
+    previous = anchor
+    for line in final_text.splitlines():
+        line = line.strip()
+        if line:
+            previous = _add_body_paragraph_after(previous, line)
+    return True
+
+
+def _write_from_template(
+    final_text: str,
+    output_path: str,
+    template_path: str,
+    unit_name: str,
+    unit_parent: str,
+) -> str:
+    template = Path(template_path)
+    if template.suffix.lower() != ".docx":
+        raise ValueError(
+            "Mẫu 156 phải được chuyển sang .docx trước khi dùng làm template. "
+            f"Định dạng nhận được: {template.suffix or '(không có phần mở rộng)'}"
+        )
+    if not template.is_file():
+        raise FileNotFoundError(f"Không tìm thấy template mẫu 156: {template}")
+
+    doc = Document(str(template))
+    if not _replace_sample_body(doc, final_text):
+        token_values = {
+            "{{DON_VI_BAN_HANH}}": unit_name,
+            "{{DON_VI_CAP_TREN}}": unit_parent,
+            "{{SO_KY_HIEU}}": "Số: ..../CT-VKS...",
+            "{{DIA_DANH_NGAY}}": "Nghệ An, ngày .... tháng .... năm 20....",
+            "{{CHUC_DANH_NGUOI_KY}}": "VIỆN TRƯỞNG",
+        }
+        for token, value in token_values.items():
+            if not _replace_template_token(doc, token, value):
+                raise ValueError(f"Template mẫu 156 thiếu vùng nội dung: {token}")
+        marker = next(
+            (
+                paragraph
+                for paragraph in _iter_paragraphs(doc)
+                if "{{NOI_DUNG_CAO_TRANG}}" in paragraph.text
+            ),
+            None,
+        )
+        if marker is None:
+            raise ValueError(
+                "Template mẫu 156 thiếu vùng nội dung: {{NOI_DUNG_CAO_TRANG}}"
+            )
+        marker.text = ""
+        previous = marker
+        for line in final_text.splitlines():
+            line = line.strip()
+            if line:
+                previous = _add_body_paragraph_after(previous, line)
+
+    doc.save(output_path)
+    return output_path
+
+
 def _add_header_table(doc: Document, unit_name: str, unit_parent: str, so_ky_hieu: str, dia_danh_ngay: str):
     table = doc.add_table(rows=1, cols=2)
     table.autofit = True
@@ -128,7 +260,23 @@ def write_result_docx(
     is_hanh_chinh: bool = False,
     unit_name: str = "VIỆN KIỂM SÁT NHÂN DÂN TỈNH NGHỆ AN",
     unit_parent: str = "VIỆN KIỂM SÁT NHÂN DÂN TỐI CAO",
+    template_path: str | None = None,
 ) -> str:
+    template_path = template_path or os.environ.get("CAO_TRANG_TEMPLATE_PATH")
+    if template_path or DEFAULT_TEMPLATE_PATH.is_file():
+        return _write_from_template(
+            final_text,
+            output_path,
+            template_path or str(DEFAULT_TEMPLATE_PATH),
+            unit_name,
+            unit_parent,
+        )
+    if case_type == "HINH_SU":
+        raise FileNotFoundError(
+            "Chưa cấu hình template mẫu 156. Đặt file DOCX tại "
+            f"{DEFAULT_TEMPLATE_PATH} hoặc cấu hình CAO_TRANG_TEMPLATE_PATH."
+        )
+
     doc = Document()
     _set_margins(doc)
 

@@ -153,7 +153,16 @@ if run_clicked and uploaded_file is not None:
         st.text_area("Bản thảo ban đầu", result["draft"], height=400)
 
     out_path = tmp_path + "_ket_qua.docx"
-    write_result_docx(result["final"], result["case_type"], out_path, is_hanh_chinh=result.get("is_hanh_chinh", False))
+    try:
+        write_result_docx(
+            result["final"],
+            result["case_type"],
+            out_path,
+            is_hanh_chinh=result.get("is_hanh_chinh", False),
+        )
+    except (FileNotFoundError, ValueError) as e:
+        st.error(f"Chưa thể xuất văn bản theo mẫu: {e}")
+        st.stop()
     with open(out_path, "rb") as f:
         st.download_button(
             "📥 Tải kết quả (.docx)",
