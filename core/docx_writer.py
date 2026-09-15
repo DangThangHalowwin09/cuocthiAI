@@ -16,6 +16,8 @@ from docx.text.paragraph import Paragraph
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
+from .pipeline import split_internal_check
+
 FONT_NAME = "Times New Roman"
 
 TITLES = {
@@ -123,6 +125,32 @@ def _add_body_paragraph_after(marker: Paragraph, text: str) -> Paragraph:
     return paragraph
 
 
+def _append_appendix_after_document(doc: Document, appendix: str):
+    if not appendix:
+        return
+
+    body = doc.element.body
+    section_properties = body.sectPr
+    if section_properties is not None:
+        body.remove(section_properties)
+    for line in appendix.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        paragraph_element = OxmlElement("w:p")
+        body.insert(len(body) - 1, paragraph_element)
+        paragraph = Paragraph(paragraph_element, doc)
+        _set_single_spacing(paragraph, space_before=6, space_after=6)
+        _add_run(
+            paragraph,
+            line,
+            size=10,
+            bold=line.startswith("---") or line[:2].isdigit(),
+        )
+    if section_properties is not None:
+        body.append(section_properties)
+
+
 def _remove_paragraph(paragraph: Paragraph):
     paragraph._element.getparent().remove(paragraph._element)
 
@@ -189,6 +217,65 @@ def _remove_template_notes(output_path: str):
     os.replace(temporary_path, output_path)
 
 
+def _move_appendix_after_tables(output_path: str):
+    main_ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    with zipfile.ZipFile(output_path, "r") as source:
+        document_xml = source.read("word/document.xml")
+
+    root = ElementTree.fromstring(document_xml)
+    body = root.find(f"{{{main_ns}}}body")
+    if body is None:
+        return
+
+    children = list(body)
+    start = next(
+        (
+            index
+            for index, child in enumerate(children)
+            if "PHỤ LỤC KIỂM TRA NỘI BỘ" in "".join(child.itertext())
+        ),
+        None,
+    )
+    end = next(
+        (
+            index
+            for index, child in enumerate(children)
+            if "HẾT PHỤ LỤC KIỂM TRA NỘI BỘ" in "".join(child.itertext())
+        ),
+        None,
+    )
+    last_table = max(
+        (index for index, child in enumerate(children) if child.tag == f"{{{main_ns}}}tbl"),
+        default=None,
+    )
+    if start is None or end is None or last_table is None or start > end:
+        return
+
+    appendix_nodes = children[start : end + 1]
+    for child in appendix_nodes:
+        body.remove(child)
+
+    current_children = list(body)
+    last_table_node = max(
+        (child for child in current_children if child.tag == f"{{{main_ns}}}tbl"),
+        key=lambda child: current_children.index(child),
+    )
+    insert_index = list(body).index(last_table_node) + 1
+    for offset, child in enumerate(appendix_nodes):
+        body.insert(insert_index + offset, child)
+
+    temporary_path = f"{output_path}.reordered"
+    with zipfile.ZipFile(output_path, "r") as source, zipfile.ZipFile(
+        temporary_path, "w", zipfile.ZIP_DEFLATED
+    ) as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "word/document.xml":
+                data = ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
+            target.writestr(item, data)
+    os.replace(temporary_path, output_path)
+
+
 def _replace_sample_body(doc: Document, final_text: str) -> bool:
     paragraphs = list(doc.paragraphs)
     start_index = next(
@@ -239,7 +326,8 @@ def _write_from_template(
         raise FileNotFoundError(f"Không tìm thấy template mẫu 156: {template}")
 
     doc = Document(str(template))
-    if not _replace_sample_body(doc, final_text):
+    document_text, appendix = split_internal_check(final_text)
+    if not _replace_sample_body(doc, document_text):
         token_values = {
             "{{DON_VI_BAN_HANH}}": unit_name,
             "{{DON_VI_CAP_TREN}}": unit_parent,
@@ -264,14 +352,16 @@ def _write_from_template(
             )
         marker.text = ""
         previous = marker
-        for line in final_text.splitlines():
+        for line in document_text.splitlines():
             line = line.strip()
             if line:
                 previous = _add_body_paragraph_after(previous, line)
 
     _set_recipients(doc)
+    _append_appendix_after_document(doc, appendix or "")
 
     doc.save(output_path)
+    _move_appendix_after_tables(output_path)
     _remove_template_notes(output_path)
     return output_path
 

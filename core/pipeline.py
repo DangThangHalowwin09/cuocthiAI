@@ -37,6 +37,22 @@ def _move_internal_check_to_end(text: str) -> str:
     return f"{document}\n\n{appendix}".strip()
 
 
+def split_internal_check(text: str) -> tuple[str, str | None]:
+    """Tách phụ lục kiểm tra khỏi thân văn bản để đặt sau phần ký tên."""
+    marker_index = text.find(_INTERNAL_CHECK_MARKER)
+    if marker_index < 0:
+        return text, None
+
+    end_index = text.find(_INTERNAL_CHECK_END_MARKER, marker_index)
+    if end_index < 0:
+        return text[:marker_index].rstrip(), text[marker_index:].strip()
+
+    appendix_end = end_index + len(_INTERNAL_CHECK_END_MARKER)
+    document = (text[:marker_index] + text[appendix_end:]).strip()
+    appendix = text[marker_index:appendix_end].strip()
+    return document, appendix
+
+
 def classify_case(input_text: str, provider: str = "gemini") -> str:
     raw = mc.call_model(
         provider, pr.SYSTEM_BASE, pr.CLASSIFY_PROMPT.format(input_text=input_text)
@@ -128,7 +144,10 @@ def self_check(
         dieu_luat_lien_quan=dieu_luat_lien_quan,
     )
     checked_text = mc.call_model(provider, pr.SYSTEM_BASE, prompt)
-    return _move_internal_check_to_end(checked_text)
+    document, appendix = split_internal_check(checked_text)
+    if appendix:
+        return f"{document}\n\n{appendix}".strip()
+    return document
 
 
 def run_pipeline(

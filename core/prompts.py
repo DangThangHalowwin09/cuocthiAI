@@ -422,7 +422,7 @@ Sau đó, xuất ra bản thảo ĐÃ CHỈNH SỬA (giữ nguyên các đoạn 
 đề, chỉ sửa/đánh dấu những chỗ phát hiện lỗi ở trên). Báo cáo kiểm tra
 phải nằm SAU CÙNG, sau toàn bộ nội dung cáo trạng, theo đúng mẫu sau:
 
---- PHỤ LỤC KIỂM TRA NỘI BỘ (ĐẶT Ở CUỐI VĂN BẢN) ---
+--- PHỤ LỤC KIỂM TRA NỘI BỘ ---
 1. KIỂM TRA DỮ KIỆN: [kết luận ngắn gọn về chi tiết không có căn cứ;
    nếu không phát hiện thì ghi rõ không phát hiện và xác nhận các chỗ
    thiếu đã đánh dấu [THIẾU DỮ LIỆU]].
