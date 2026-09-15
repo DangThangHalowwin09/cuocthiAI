@@ -410,14 +410,30 @@ THẢO dưới đây, đối chiếu với DỮ KIỆN GỐC (JSON), và thực 
      CẦN XÁC MINH: mô tả mâu thuẫn], không tự chọn phương án nào.
 
 Sau đó, xuất ra bản thảo ĐÃ CHỈNH SỬA (giữ nguyên các đoạn không có vấn
-đề, chỉ sửa/đánh dấu những chỗ phát hiện lỗi ở trên). CHỈ xuất bản thảo
-đã chỉnh sửa, không kèm lời giải thích ở đầu/cuối.
+đề, chỉ sửa/đánh dấu những chỗ phát hiện lỗi ở trên). Báo cáo kiểm tra
+phải nằm SAU CÙNG, sau toàn bộ nội dung cáo trạng, theo đúng mẫu sau:
+
+--- PHỤ LỤC KIỂM TRA NỘI BỘ (ĐẶT Ở CUỐI VĂN BẢN) ---
+1. KIỂM TRA DỮ KIỆN: [kết luận ngắn gọn về chi tiết không có căn cứ;
+   nếu không phát hiện thì ghi rõ không phát hiện và xác nhận các chỗ
+   thiếu đã đánh dấu [THIẾU DỮ LIỆU]].
+2. KIỂM TRA CẤU TRÚC: [kết luận về các mục bắt buộc của loại văn bản].
+3. KIỂM TRA ĐIỀU LUẬT: [đối chiếu với tài liệu tham chiếu; nếu thiếu
+   tội danh/điều khoản thì ghi rõ [THIẾU DỮ LIỆU], không tự suy đoán].
+--- HẾT PHỤ LỤC KIỂM TRA NỘI BỘ ---
+
+Tuyệt đối không đặt phần phụ lục này ở đầu văn bản, không chèn nhận xét
+kiểm tra vào giữa các mục của cáo trạng, và không thêm lời giải thích
+ngoài ba mục trên.
 
 --- LOẠI VỤ VIỆC ---
 {case_type}
 
 --- DỮ KIỆN GỐC (JSON) ---
 {facts_json}
+
+--- ĐIỀU LUẬT ĐÃ TRA CỨU Ở BƯỚC SOẠN THẢO ---
+{dieu_luat_lien_quan}
 
 --- BẢN THẢO CẦN KIỂM TRA ---
 {draft_text}

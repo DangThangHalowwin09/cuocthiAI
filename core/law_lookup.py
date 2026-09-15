@@ -67,6 +67,9 @@ def _score_articles(query_text: str, articles: list, top_n: int) -> list:
         return []
 
     normalized_query = _normalize(query_text)
+    requested_article_numbers = {
+        number for number in re.findall(r"\b(?:điều\s*)?(\d+)\b", normalized_query)
+    }
 
     def source_boost(article: dict) -> int:
         law_code = article.get("ma_luat", "")
@@ -81,15 +84,21 @@ def _score_articles(query_text: str, articles: list, top_n: int) -> list:
             for phrase in ("tình tiết giảm nhẹ", "điều 51", "điều 52", "tăng nặng")
         ):
             boost += 8
+        if requested_article_numbers and str(article.get("dieu_so")) in requested_article_numbers:
+            boost += 10
         return boost
 
     scored = []
     for art in articles:
-        haystack = art["tieu_de"] + " " + art["noi_dung"][:300]
+        haystack = art["tieu_de"] + " " + art["noi_dung"]
         art_tokens = _tokenize(haystack)
         overlap = len(query_tokens & art_tokens)
         title_overlap = len(query_tokens & _tokenize(art["tieu_de"]))
-        score = overlap + title_overlap * 3 + source_boost(art)
+        phrase_overlap = sum(
+            4 for phrase in ("người chưa thành niên", "người dưới 18 tuổi", "tình tiết giảm nhẹ", "tình tiết tăng nặng")
+            if phrase in normalized_query and phrase in _normalize(haystack)
+        )
+        score = overlap + title_overlap * 3 + phrase_overlap + source_boost(art)
         if score > 0:
             scored.append((score, art))
 
@@ -123,7 +132,8 @@ def _search_online_via_gemini(query_text: str, top_n: int = 5) -> str:
     prompt = (
         f"Tìm các điều luật liên quan nhất tới nội dung sau, CHỈ trong "
         f"phạm vi Bộ luật Hình sự, Bộ luật Tố tụng hình sự, Bộ luật Dân "
-        f"sự, Bộ luật Tố tụng dân sự, Luật Tố tụng hành chính của Việt "
+        f"sự, Bộ luật Tố tụng dân sự, Luật Tố tụng hành chính, Luật Tư "
+        f"pháp người chưa thành niên và các nghị quyết hướng dẫn hình sự của Việt "
         f"Nam (bản hiện hành, đã cập nhật sửa đổi mới nhất). Với mỗi "
         f"điều tìm được, trích dẫn NGUYÊN VĂN đầy đủ nội dung điều đó, "
         f"không tóm tắt, không diễn giải lại. Ghi rõ nguồn (link) đã "

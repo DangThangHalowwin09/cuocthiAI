@@ -16,6 +16,27 @@ from . import prompts as pr
 from . import law_lookup
 
 
+_INTERNAL_CHECK_MARKER = "--- PHỤ LỤC KIỂM TRA NỘI BỘ"
+_INTERNAL_CHECK_END_MARKER = "--- HẾT PHỤ LỤC KIỂM TRA NỘI BỘ ---"
+
+
+def _move_internal_check_to_end(text: str) -> str:
+    """Giữ phụ lục kiểm tra ở cuối cáo trạng dù model đặt sai vị trí."""
+    marker_index = text.find(_INTERNAL_CHECK_MARKER)
+    if marker_index < 0:
+        return text
+
+    end_index = text.find(_INTERNAL_CHECK_END_MARKER, marker_index)
+    if end_index >= 0:
+        appendix_end = end_index + len(_INTERNAL_CHECK_END_MARKER)
+        appendix = text[marker_index:appendix_end].strip()
+        document = (text[:marker_index] + text[appendix_end:]).strip()
+    else:
+        document = text[:marker_index].rstrip()
+        appendix = text[marker_index:].strip()
+    return f"{document}\n\n{appendix}".strip()
+
+
 def classify_case(input_text: str, provider: str = "gemini") -> str:
     raw = mc.call_model(
         provider, pr.SYSTEM_BASE, pr.CLASSIFY_PROMPT.format(input_text=input_text)
@@ -93,11 +114,21 @@ def draft_document(facts_json: str, dieu_luat_lien_quan: str, case_type: str, pr
     return mc.call_model(provider, pr.SYSTEM_BASE, prompt)
 
 
-def self_check(draft_text: str, facts_json: str, case_type: str, provider: str = "gemini") -> str:
+def self_check(
+    draft_text: str,
+    facts_json: str,
+    case_type: str,
+    dieu_luat_lien_quan: str,
+    provider: str = "gemini",
+) -> str:
     prompt = pr.SELF_CHECK_PROMPT.format(
-        draft_text=draft_text, facts_json=facts_json, case_type=case_type
+        draft_text=draft_text,
+        facts_json=facts_json,
+        case_type=case_type,
+        dieu_luat_lien_quan=dieu_luat_lien_quan,
     )
-    return mc.call_model(provider, pr.SYSTEM_BASE, prompt)
+    checked_text = mc.call_model(provider, pr.SYSTEM_BASE, prompt)
+    return _move_internal_check_to_end(checked_text)
 
 
 def run_pipeline(
@@ -129,7 +160,7 @@ def run_pipeline(
     draft = draft_document(facts, dieu_luat_lien_quan, case_type, provider)
     notify("draft", draft)
 
-    final = self_check(draft, facts, case_type, provider)
+    final = self_check(draft, facts, case_type, dieu_luat_lien_quan, provider)
     notify("self_check", final)
 
     return {
