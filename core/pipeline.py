@@ -10,6 +10,7 @@
 """
 
 import json
+import re
 
 from . import model_clients as mc
 from . import prompts as pr
@@ -51,6 +52,22 @@ def split_internal_check(text: str) -> tuple[str, str | None]:
     document = (text[:marker_index] + text[appendix_end:]).strip()
     appendix = text[marker_index:appendix_end].strip()
     return document, appendix
+
+
+def _normalize_legal_terms(text: str) -> str:
+    patterns = (
+        r"phòng\s+thi\s+hành\s+án(?:\s+dân\s+sự)?(?:\s+khu\s+vực\s*\d+)?(?:\s*[–-]\s*[^,;.\n]+)?",
+        r"thi\s+hành\s+án\s+khu\s+vực\s*\d+(?:\s*[–-]\s*[^,;.\n]+)?",
+    )
+    normalized = text
+    for pattern in patterns:
+        normalized = re.sub(
+            pattern,
+            "Cơ quan Thi hành án dân sự có thẩm quyền",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+    return normalized
 
 
 def classify_case(input_text: str, provider: str = "gemini") -> str:
@@ -136,7 +153,7 @@ def self_check(
     case_type: str,
     dieu_luat_lien_quan: str,
     provider: str = "gemini",
-) -> str:
+    ) -> tuple[str, str | None]:
     prompt = pr.SELF_CHECK_PROMPT.format(
         draft_text=draft_text,
         facts_json=facts_json,
@@ -145,9 +162,7 @@ def self_check(
     )
     checked_text = mc.call_model(provider, pr.SYSTEM_BASE, prompt)
     document, appendix = split_internal_check(checked_text)
-    if appendix:
-        return f"{document}\n\n{appendix}".strip()
-    return document
+    return _normalize_legal_terms(document), appendix
 
 
 def run_pipeline(
@@ -179,7 +194,9 @@ def run_pipeline(
     draft = draft_document(facts, dieu_luat_lien_quan, case_type, provider)
     notify("draft", draft)
 
-    final = self_check(draft, facts, case_type, dieu_luat_lien_quan, provider)
+    final, internal_check = self_check(
+        draft, facts, case_type, dieu_luat_lien_quan, provider
+    )
     notify("self_check", final)
 
     return {
@@ -189,4 +206,5 @@ def run_pipeline(
         "dieu_luat_lien_quan": dieu_luat_lien_quan,
         "draft": draft,
         "final": final,
+        "internal_check": internal_check or "Chưa có báo cáo kiểm tra nội bộ.",
     }

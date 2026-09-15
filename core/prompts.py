@@ -45,6 +45,9 @@ NGUYÊN TẮC BẮT BUỘC (không được vi phạm trong bất kỳ trường
 6. Văn phong: trang trọng, đúng thể thức văn bản hành chính - tố tụng
    Việt Nam, khách quan, không suy diễn theo hướng có lợi hoặc bất lợi
    cho bất kỳ bên nào ngoài căn cứ đã nêu trong hồ sơ.
+7. Nếu gặp cụm từ chỉ nơi nộp tiền/thi hành án như "phòng thi hành án",
+   "phòng thi hành án dân sự khu vực..." hoặc "thi hành án khu vực...",
+   phải chuẩn hóa thành "Cơ quan Thi hành án dân sự có thẩm quyền".
 """
 
 # ---------------------------------------------------------------------------
@@ -356,6 +359,17 @@ Ví dụ, nếu hồ sơ thể hiện dùng gậy gỗ là hung khí nguy hiểm
 10% sức khỏe, có thể gợi ý xem xét Điều 134 Bộ luật Hình sự nếu điều luật
 đó có trong tài liệu tra cứu. Không được trình bày gợi ý này như kết luận
 truy tố và không tự điền điểm/khoản nếu dữ kiện hoặc tài liệu luật chưa đủ.
+
+Phần lý lịch bị can phải trình bày theo khung điền nhanh, mỗi bị can một
+khối, không lặp [THIẾU DỮ LIỆU] ở mọi dòng. Dùng đúng cấu trúc:
+1. Bị can: [HỌ TÊN]
+- Tên gọi khác: [giá trị hoặc THIẾU DỮ LIỆU] - Giới tính: [giá trị]
+- Sinh ngày: [ngày sinh] tại: [nơi sinh]
+- Cư trú: [địa chỉ]
+- Quốc tịch: [giá trị] - Dân tộc: [giá trị] - Tôn giáo: [giá trị]
+- Nghề nghiệp: [giá trị] - Tiền án, tiền sự: [giá trị]
+Chỉ ghi [THIẾU DỮ LIỆU] một lần ở cuối dòng/khối khi nhiều trường cùng
+chưa có dữ liệu; không tự điền giá trị thay thế.
 
 CHỈ xuất phần nội dung từ "Căn cứ..." đến hết phần "QUYẾT ĐỊNH". Không
 xuất quốc hiệu, tiêu ngữ, tên cơ quan, số ký hiệu, địa danh ngày tháng,

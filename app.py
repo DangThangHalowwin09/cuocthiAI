@@ -140,11 +140,13 @@ if run_clicked and uploaded_file is not None:
     loai_hien_thi = "Hình sự" if result['case_type'] == 'HINH_SU' else ("Hành chính" if result.get('is_hanh_chinh') else "Dân sự / HNGĐ / KDTM / Lao động")
     st.success(f"Đã soạn xong bản thảo — loại vụ việc: **{loai_hien_thi}**")
 
-    tab_final, tab_facts, tab_laws, tab_draft = st.tabs(
-        ["📌 Kết quả cuối", "🔍 Dữ kiện đã trích xuất", "⚖️ Điều luật tìm được", "📝 Bản thảo (trước kiểm tra)"]
+    tab_final, tab_check, tab_facts, tab_laws, tab_draft = st.tabs(
+        ["📌 Kết quả cuối", "✅ Kiểm tra nội bộ", "🔍 Dữ kiện đã trích xuất", "⚖️ Điều luật tìm được", "📝 Bản thảo (trước kiểm tra)"]
     )
     with tab_final:
-        st.text_area("Văn bản kết quả (đã qua bước tự kiểm tra)", result["final"], height=500)
+        st.text_area("Văn bản cáo trạng (không kèm phụ lục nội bộ)", result["final"], height=500)
+    with tab_check:
+        st.text_area("Phụ lục kiểm tra nội bộ (chỉ hiển thị trên ứng dụng)", result["internal_check"], height=350)
     with tab_facts:
         st.text_area("Dữ kiện trích xuất (JSON)", result["facts"], height=400)
     with tab_laws:
