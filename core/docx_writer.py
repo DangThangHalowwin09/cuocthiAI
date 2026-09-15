@@ -5,7 +5,9 @@ Xuất văn bản kết quả (Cáo trạng / Phát biểu của Kiểm sát vi�
 """
 
 import os
+import zipfile
 from pathlib import Path
+from xml.etree import ElementTree
 
 from docx import Document
 from docx.shared import Pt, Mm, Cm
@@ -125,6 +127,68 @@ def _remove_paragraph(paragraph: Paragraph):
     paragraph._element.getparent().remove(paragraph._element)
 
 
+def _set_recipients(doc: Document):
+    if len(doc.tables) < 2:
+        return
+
+    cell = doc.tables[-1].cell(0, 0)
+    recipient_lines = [
+        "Nơi nhận:",
+        "- Tòa án nhân dân có thẩm quyền;",
+        "- Bị can;",
+        "- Người bào chữa (nếu có);",
+        "- Lưu: HSVA, HSKS, VP.",
+    ]
+    cell.text = ""
+    for index, line in enumerate(recipient_lines):
+        paragraph = cell.paragraphs[0] if index == 0 else cell.add_paragraph()
+        _set_single_spacing(paragraph)
+        _add_run(paragraph, line, size=12 if index == 0 else 11, bold=index == 0)
+
+
+def _remove_template_notes(output_path: str):
+    """Xóa footnote/endnote và reference của phần hướng dẫn trong template."""
+    main_ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    rel_ns = "http://schemas.openxmlformats.org/package/2006/relationships"
+    content_ns = "http://schemas.openxmlformats.org/package/2006/content-types"
+    ElementTree.register_namespace("w", main_ns)
+
+    temporary_path = f"{output_path}.clean"
+    with zipfile.ZipFile(output_path, "r") as source, zipfile.ZipFile(
+        temporary_path, "w", zipfile.ZIP_DEFLATED
+    ) as output_zip:
+        for item in source.infolist():
+            if item.filename in {"word/footnotes.xml", "word/endnotes.xml"}:
+                continue
+
+            data = source.read(item.filename)
+            if item.filename == "word/document.xml":
+                root = ElementTree.fromstring(data)
+                for tag in ("footnoteReference", "endnoteReference"):
+                    reference_tag = f"{{{main_ns}}}{tag}"
+                    for parent in root.iter():
+                        for reference in list(parent):
+                            if reference.tag == reference_tag:
+                                parent.remove(reference)
+                data = ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
+            elif item.filename == "[Content_Types].xml":
+                root = ElementTree.fromstring(data)
+                for override in list(root):
+                    part_name = override.attrib.get("PartName", "")
+                    if part_name in {"/word/footnotes.xml", "/word/endnotes.xml"}:
+                        root.remove(override)
+                data = ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
+            elif item.filename == "word/_rels/document.xml.rels":
+                root = ElementTree.fromstring(data)
+                for relationship in list(root):
+                    relationship_target = relationship.attrib.get("Target", "")
+                    if relationship_target in {"footnotes.xml", "endnotes.xml"}:
+                        root.remove(relationship)
+                data = ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
+            output_zip.writestr(item, data)
+    os.replace(temporary_path, output_path)
+
+
 def _replace_sample_body(doc: Document, final_text: str) -> bool:
     paragraphs = list(doc.paragraphs)
     start_index = next(
@@ -205,7 +269,10 @@ def _write_from_template(
             if line:
                 previous = _add_body_paragraph_after(previous, line)
 
+    _set_recipients(doc)
+
     doc.save(output_path)
+    _remove_template_notes(output_path)
     return output_path
 
 

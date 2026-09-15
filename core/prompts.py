@@ -348,6 +348,15 @@ CHỈ trích dẫn điều luật có trong mục "ĐIỀU LUẬT LIÊN QUAN" b�
 JSON có trường ghi "THIẾU DỮ LIỆU" ở mục quan trọng, phải thể hiện rõ
 [THIẾU DỮ LIỆU: ...] tại đúng vị trí trong bản thảo, không tự bịa cho đủ.
 
+Nếu dữ kiện mô tả đủ dấu hiệu khách quan của hành vi nhưng chưa có tội
+danh/điều khoản chính thức, phải đưa ra mục "GỢI Ý PHÁP LÝ" ngay tại phần
+KẾT LUẬN, dựa trên điều luật đã tra cứu. Gợi ý phải ghi đúng mẫu:
+"[GỢI Ý PHÁP LÝ - KSV XÁC NHẬN: có thể xem xét tội ..., theo ...]".
+Ví dụ, nếu hồ sơ thể hiện dùng gậy gỗ là hung khí nguy hiểm, gây tổn hại
+10% sức khỏe, có thể gợi ý xem xét Điều 134 Bộ luật Hình sự nếu điều luật
+đó có trong tài liệu tra cứu. Không được trình bày gợi ý này như kết luận
+truy tố và không tự điền điểm/khoản nếu dữ kiện hoặc tài liệu luật chưa đủ.
+
 CHỈ xuất phần nội dung từ "Căn cứ..." đến hết phần "QUYẾT ĐỊNH". Không
 xuất quốc hiệu, tiêu ngữ, tên cơ quan, số ký hiệu, địa danh ngày tháng,
 tiêu đề CÁO TRẠNG, phần Nơi nhận, chức danh hoặc chữ ký; các phần đó đã
