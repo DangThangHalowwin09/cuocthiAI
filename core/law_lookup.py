@@ -84,6 +84,17 @@ def _score_articles(query_text: str, articles: list, top_n: int) -> list:
             for phrase in ("tình tiết giảm nhẹ", "điều 51", "điều 52", "tăng nặng")
         ):
             boost += 8
+        if law_code == "blhs" and str(article.get("dieu_so")) == "134" and any(
+            phrase in normalized_query
+            for phrase in (
+                "cố ý gây thương tích",
+                "gây thương tích",
+                "hung khí nguy hiểm",
+                "tổn hại sức khỏe",
+                "thương tích",
+            )
+        ):
+            boost += 30
         if requested_article_numbers and str(article.get("dieu_so")) in requested_article_numbers:
             boost += 10
         return boost

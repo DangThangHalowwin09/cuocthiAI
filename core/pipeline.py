@@ -70,6 +70,33 @@ def _normalize_legal_terms(text: str) -> str:
     return normalized
 
 
+_AI_SUGGESTION_PATTERN = re.compile(
+    r"\[(?:GỢI Ý PHÁP LÝ\s*-\s*KSV XÁC NHẬN|GỢI Ý CỦA AI,?\s*KSV CẦN XÁC NHẬN LẠI):\s*([^\]]+)\]",
+    flags=re.IGNORECASE,
+)
+
+
+def _preserve_ai_suggestions(document: str, draft: str) -> str:
+    suggestions = _AI_SUGGESTION_PATTERN.findall(draft)
+    if not suggestions:
+        return document
+
+    normalized_suggestions = [
+        f"[GỢI Ý CỦA AI, KSV CẦN XÁC NHẬN LẠI: {suggestion.strip()}]"
+        for suggestion in suggestions
+    ]
+    missing = [suggestion for suggestion in normalized_suggestions if suggestion not in document]
+    if not missing:
+        return document
+
+    block = "\n".join(missing)
+    decision_match = re.search(r"(?m)^\s*QUYẾT ĐỊNH\s*$", document)
+    if decision_match:
+        position = decision_match.start()
+        return f"{document[:position].rstrip()}\n\n{block}\n\n{document[position:]}".strip()
+    return f"{document.rstrip()}\n\n{block}".strip()
+
+
 def classify_case(input_text: str, provider: str = "gemini") -> str:
     raw = mc.call_model(
         provider, pr.SYSTEM_BASE, pr.CLASSIFY_PROMPT.format(input_text=input_text)
@@ -112,7 +139,10 @@ def lookup_laws(facts_json: str, case_type: str, top_n: int = 10) -> str:
     except (json.JSONDecodeError, AttributeError):
         query = facts_json
 
-    result = law_lookup.find_relevant_articles(query, top_n=top_n)
+    result = law_lookup.find_relevant_articles(
+        query,
+        top_n=max(top_n, 20) if case_type == "HINH_SU" else top_n,
+    )
     return law_lookup.format_articles_for_prompt(result)
 
 
@@ -162,7 +192,9 @@ def self_check(
     )
     checked_text = mc.call_model(provider, pr.SYSTEM_BASE, prompt)
     document, appendix = split_internal_check(checked_text)
-    return _normalize_legal_terms(document), appendix
+    document = _normalize_legal_terms(document)
+    document = _preserve_ai_suggestions(document, draft_text)
+    return document, appendix
 
 
 def run_pipeline(

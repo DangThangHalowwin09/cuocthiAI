@@ -354,11 +354,15 @@ JSON có trường ghi "THIẾU DỮ LIỆU" ở mục quan trọng, phải th�
 Nếu dữ kiện mô tả đủ dấu hiệu khách quan của hành vi nhưng chưa có tội
 danh/điều khoản chính thức, phải đưa ra mục "GỢI Ý PHÁP LÝ" ngay tại phần
 KẾT LUẬN, dựa trên điều luật đã tra cứu. Gợi ý phải ghi đúng mẫu:
-"[GỢI Ý PHÁP LÝ - KSV XÁC NHẬN: có thể xem xét tội ..., theo ...]".
+"[GỢI Ý CỦA AI, KSV CẦN XÁC NHẬN LẠI: có thể xem xét tội ..., theo ...]".
 Ví dụ, nếu hồ sơ thể hiện dùng gậy gỗ là hung khí nguy hiểm, gây tổn hại
 10% sức khỏe, có thể gợi ý xem xét Điều 134 Bộ luật Hình sự nếu điều luật
 đó có trong tài liệu tra cứu. Không được trình bày gợi ý này như kết luận
 truy tố và không tự điền điểm/khoản nếu dữ kiện hoặc tài liệu luật chưa đủ.
+Khi dữ kiện đủ để nhận diện hướng pháp lý nhưng chưa đủ để kết luận chính
+thức, không được xóa gợi ý rồi thay bằng [THIẾU DỮ LIỆU: tội danh]. Phải
+giữ đồng thời gợi ý có cảnh báo và đánh dấu thiếu dữ liệu ở phần kết luận
+chính thức nếu cần.
 
 Phần lý lịch bị can phải trình bày theo khung điền nhanh, mỗi bị can một
 khối, không lặp [THIẾU DỮ LIỆU] ở mọi dòng. Dùng đúng cấu trúc:
@@ -431,6 +435,12 @@ THẢO dưới đây, đối chiếu với DỮ KIỆN GỐC (JSON), và thực 
    - Không tìm thấy căn cứ pháp luật phù hợp → đánh dấu [CẦN KIỂM TRA LẠI ĐIỀU LUẬT].
    - Tình tiết mâu thuẫn giữa các phần của hồ sơ → đánh dấu [TÌNH TIẾT MÂU THUẪN -
      CẦN XÁC MINH: mô tả mâu thuẫn], không tự chọn phương án nào.
+    - Dòng có nhãn [GỢI Ý CỦA AI, KSV CẦN XÁC NHẬN LẠI: ...] là đề xuất
+       hỗ trợ, không phải kết luận truy tố. Nếu đề xuất khớp với điều luật
+       trong tài liệu tham chiếu và không trái dữ kiện, phải giữ nguyên;
+       không chuyển dòng này thành [THIẾU DỮ LIỆU]. Nếu điều luật đề xuất
+       không có trong tài liệu tham chiếu, giữ ý tưởng nhưng thay phần căn cứ
+       bằng [CẦN KIỂM TRA LẠI ĐIỀU LUẬT].
 
 Sau đó, xuất ra bản thảo ĐÃ CHỈNH SỬA (giữ nguyên các đoạn không có vấn
 đề, chỉ sửa/đánh dấu những chỗ phát hiện lỗi ở trên). Báo cáo kiểm tra
