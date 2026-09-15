@@ -41,16 +41,16 @@ ai-vksnd-project/
 
 ## 2. Dữ liệu luật đã nạp — 8 bộ luật, 2.982 điều
 
-| Bộ luật | Mã | Số điều | Dùng chủ yếu cho |
-|---|---|---|---|
-| Bộ luật Hình sự | `blhs` | 408 (426 - 18 điều đã bãi bỏ) | Hình sự |
-| Bộ luật Tố tụng hình sự | `blttths` | 510 | Hình sự (thủ tục) |
-| Bộ luật Dân sự | `blds` | 689 | Dân sự |
-| Bộ luật Tố tụng dân sự | `blttds` | 517 | Dân sự (thủ tục) |
-| Luật sửa đổi BLTTDS/LTTHC (2025) | `blttds_suadoi_2025` | 6 | Bổ sung |
-| Luật Tố tụng hành chính | `lthc` | 372 | Hành chính |
-| Luật Đất đai | `luat_dat_dai` | 260 | Dân sự/Hành chính liên quan đất đai |
-| Bộ luật Lao động | `luat_lao_dong` | 220 | Dân sự liên quan lao động |
+| Bộ luật                          | Mã                   | Số điều                       | Dùng chủ yếu cho                    |
+| -------------------------------- | -------------------- | ----------------------------- | ----------------------------------- |
+| Bộ luật Hình sự                  | `blhs`               | 408 (426 - 18 điều đã bãi bỏ) | Hình sự                             |
+| Bộ luật Tố tụng hình sự          | `blttths`            | 510                           | Hình sự (thủ tục)                   |
+| Bộ luật Dân sự                   | `blds`               | 689                           | Dân sự                              |
+| Bộ luật Tố tụng dân sự           | `blttds`             | 517                           | Dân sự (thủ tục)                    |
+| Luật sửa đổi BLTTDS/LTTHC (2025) | `blttds_suadoi_2025` | 6                             | Bổ sung                             |
+| Luật Tố tụng hành chính          | `lthc`               | 372                           | Hành chính                          |
+| Luật Đất đai                     | `luat_dat_dai`       | 260                           | Dân sự/Hành chính liên quan đất đai |
+| Bộ luật Lao động                 | `luat_lao_dong`      | 220                           | Dân sự liên quan lao động           |
 
 Đã bổ sung nguồn cấu hình cho `Luật Tư pháp người chưa thành niên` và
 `Nghị quyết 04/2025 hướng dẫn về tình tiết giảm nhẹ`. Sau khi đặt hai file
@@ -68,10 +68,10 @@ số từ khóa tự quyết định điều nào liên quan nhất.
 
 ## 3. Hai chế độ tra cứu luật (`core/config.py`, biến `LAW_SEARCH_MODE`)
 
-| Chế độ | Mô tả | Khi nào dùng |
-|---|---|---|
-| `"offline"` (mặc định) | CHỈ tra cứu trong 8 bộ luật đã nạp | **Khuyến nghị cho buổi thi chính thức** — nhanh, miễn phí, không phụ thuộc mạng lúc BTC chấm |
-| `"hybrid"` | Offline trước; nếu không tìm đủ, tự động nhờ Gemini tra Google Search bổ sung | Khi đề thi có thể đụng tội danh/quan hệ pháp luật ngoài 8 bộ luật đã nạp |
+| Chế độ                 | Mô tả                                                                         | Khi nào dùng                                                                                 |
+| ---------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `"offline"` (mặc định) | CHỈ tra cứu trong 8 bộ luật đã nạp                                            | **Khuyến nghị cho buổi thi chính thức** — nhanh, miễn phí, không phụ thuộc mạng lúc BTC chấm |
+| `"hybrid"`             | Offline trước; nếu không tìm đủ, tự động nhờ Gemini tra Google Search bổ sung | Khi đề thi có thể đụng tội danh/quan hệ pháp luật ngoài 8 bộ luật đã nạp                     |
 
 Đổi chế độ: sửa 1 dòng trong `core/config.py`, không cần sửa code khác.
 Ở chế độ hybrid, kết quả tra mạng được đánh dấu rõ nguồn khác với dữ
@@ -96,17 +96,17 @@ Hệ thống **tự động chọn đúng mẫu 35 hay 36** dựa vào trường
 File `.docx` xuất ra tuân theo thể thức tại Phụ lục I, Nghị định
 30/2020/NĐ-CP về công tác văn thư (`core/docx_writer.py`):
 
-| Thành phần | Quy cách áp dụng |
-|---|---|
-| Khổ giấy, lề | A4; lề trên/dưới 20mm, trái 30mm, phải 20mm |
-| Phông chữ | Times New Roman, toàn bộ văn bản |
-| Quốc hiệu / Tiêu ngữ | In hoa/thường, đậm, cỡ 13/14, có gạch chân |
-| Tên cơ quan ban hành | In hoa, đậm, cỡ 13, có gạch chân ngắn |
-| Số, ký hiệu / Địa danh ngày tháng | Cỡ 13-14; địa danh-ngày tháng in NGHIÊNG |
-| Tên loại văn bản | In hoa, đậm, cỡ 14, canh giữa |
-| Phần "Căn cứ..." | In NGHIÊNG (đúng quy định) |
-| Nội dung | Cỡ 14, đứng |
-| Chức vụ người ký / Nơi nhận | 2 cột, đúng cỡ chữ quy định |
+| Thành phần                        | Quy cách áp dụng                            |
+| --------------------------------- | ------------------------------------------- |
+| Khổ giấy, lề                      | A4; lề trên/dưới 20mm, trái 30mm, phải 20mm |
+| Phông chữ                         | Times New Roman, toàn bộ văn bản            |
+| Quốc hiệu / Tiêu ngữ              | In hoa/thường, đậm, cỡ 13/14, có gạch chân  |
+| Tên cơ quan ban hành              | In hoa, đậm, cỡ 13, có gạch chân ngắn       |
+| Số, ký hiệu / Địa danh ngày tháng | Cỡ 13-14; địa danh-ngày tháng in NGHIÊNG    |
+| Tên loại văn bản                  | In hoa, đậm, cỡ 14, canh giữa               |
+| Phần "Căn cứ..."                  | In NGHIÊNG (đúng quy định)                  |
+| Nội dung                          | Cỡ 14, đứng                                 |
+| Chức vụ người ký / Nơi nhận       | 2 cột, đúng cỡ chữ quy định                 |
 
 ⚠️ Đây là bản triển khai bám sát Phụ lục I ở mức khung thể thức chính.
 Nên đối chiếu trực quan với 1 văn bản mẫu thật của đơn vị trước khi
@@ -135,11 +135,11 @@ cần tải đề lên và bấm chạy. Key đọc từ biến môi trường s
 
 ## 7. Các đánh dấu đặc biệt trong kết quả
 
-| Đánh dấu | Ý nghĩa |
-|---|---|
-| `[THIẾU DỮ LIỆU: ...]` | Hồ sơ không đủ thông tin cho mục này |
-| `[CẦN KIỂM TRA LẠI ĐIỀU LUẬT]` | AI không chắc chắn về điều luật trích dẫn (hoặc dùng nguồn online ở chế độ hybrid) |
-| `[TÌNH TIẾT MÂU THUẪN - CẦN XÁC MINH: ...]` | Phát hiện mâu thuẫn giữa các phần hồ sơ |
+| Đánh dấu                                    | Ý nghĩa                                                                            |
+| ------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `[THIẾU DỮ LIỆU: ...]`                      | Hồ sơ không đủ thông tin cho mục này                                               |
+| `[CẦN KIỂM TRA LẠI ĐIỀU LUẬT]`              | AI không chắc chắn về điều luật trích dẫn (hoặc dùng nguồn online ở chế độ hybrid) |
+| `[TÌNH TIẾT MÂU THUẪN - CẦN XÁC MINH: ...]` | Phát hiện mâu thuẫn giữa các phần hồ sơ                                            |
 
 ## 8. Lưu ý an toàn thông tin
 
@@ -152,6 +152,7 @@ cần tải đề lên và bấm chạy. Key đọc từ biến môi trường s
 ## 9. Deploy lên web (Render.com, hỗ trợ domain riêng)
 
 Xem hướng dẫn chi tiết đã trao đổi trong quá trình phát triển — tóm tắt:
+
 1. Đẩy code lên GitHub
 2. Tạo Web Service trên render.com, trỏ vào repo (đã có sẵn `render.yaml`)
 3. Thêm biến môi trường `GOOGLE_API_KEY` trong Render Dashboard

@@ -66,13 +66,30 @@ def _score_articles(query_text: str, articles: list, top_n: int) -> list:
     if not query_tokens:
         return []
 
+    normalized_query = _normalize(query_text)
+
+    def source_boost(article: dict) -> int:
+        law_code = article.get("ma_luat", "")
+        boost = 0
+        if law_code == "luat_tu_phap_nguoi_chua_thanh_nien" and any(
+            phrase in normalized_query
+            for phrase in ("chưa thành niên", "dưới 18 tuổi", "xử lý chuyển hướng")
+        ):
+            boost += 8
+        if law_code == "nq04_2025_tinh_tiet_giam_nhe" and any(
+            phrase in normalized_query
+            for phrase in ("tình tiết giảm nhẹ", "điều 51", "điều 52", "tăng nặng")
+        ):
+            boost += 8
+        return boost
+
     scored = []
     for art in articles:
         haystack = art["tieu_de"] + " " + art["noi_dung"][:300]
         art_tokens = _tokenize(haystack)
         overlap = len(query_tokens & art_tokens)
         title_overlap = len(query_tokens & _tokenize(art["tieu_de"]))
-        score = overlap + title_overlap * 3
+        score = overlap + title_overlap * 3 + source_boost(art)
         if score > 0:
             scored.append((score, art))
 
