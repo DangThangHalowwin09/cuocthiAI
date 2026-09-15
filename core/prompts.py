@@ -73,6 +73,8 @@ Cấu trúc JSON cần trả về:
 {{
   "bi_can": [{{"ho_ten": "", "nam_sinh": "", "vai_tro": ""}}],
   "bi_hai": [{{"ho_ten": ""}}],
+   "tuoi_tai_thoi_diem_pham_toi": "",
+   "la_nguoi_duoi_18_tuoi": "có | không | THIẾU DỮ LIỆU",
   "toi_danh_nghi_van": "",
   "hanh_vi_pham_toi_tom_tat": "",
   "thoi_gian_dia_diem": "",

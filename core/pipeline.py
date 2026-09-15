@@ -41,7 +41,14 @@ def lookup_laws(facts_json: str, case_type: str, top_n: int = 10) -> str:
         if case_type == "HINH_SU":
             query = " ".join(
                 str(facts.get(k, ""))
-                for k in ("toi_danh_nghi_van", "hanh_vi_pham_toi_tom_tat")
+                for k in (
+                    "toi_danh_nghi_van",
+                    "hanh_vi_pham_toi_tom_tat",
+                    "tuoi_tai_thoi_diem_pham_toi",
+                    "la_nguoi_duoi_18_tuoi",
+                    "tinh_tiet_tang_nang",
+                    "tinh_tiet_giam_nhe",
+                )
             )
         else:
             query = " ".join(

@@ -73,6 +73,16 @@ LAWS_CONFIG = [
         "ten_luat": "Bộ luật Lao động",
         "nguon": ["Bộ_Luật_lao_động.docx"],
     },
+    {
+        "ma_luat": "luat_tu_phap_nguoi_chua_thanh_nien",
+        "ten_luat": "Luật Tư pháp người chưa thành niên",
+        "nguon": ["Luật tư pháp người chưa thành niên.docx"],
+    },
+    {
+        "ma_luat": "nq04_2025_tinh_tiet_giam_nhe",
+        "ten_luat": "Nghị quyết 04/2025 hướng dẫn về tình tiết giảm nhẹ",
+        "nguon": ["Nghị quyết 04.2025 về hướng dẫn về tình tiết giảm nhẹ.docx"],
+    },
 ]
 
 DIEU_PATTERN_RAW = r"^Điều\s+(\d+)\.\s*(.*)$"

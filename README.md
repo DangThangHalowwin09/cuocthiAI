@@ -52,6 +52,12 @@ ai-vksnd-project/
 | Luật Đất đai | `luat_dat_dai` | 260 | Dân sự/Hành chính liên quan đất đai |
 | Bộ luật Lao động | `luat_lao_dong` | 220 | Dân sự liên quan lao động |
 
+Đã bổ sung nguồn cấu hình cho `Luật Tư pháp người chưa thành niên` và
+`Nghị quyết 04/2025 hướng dẫn về tình tiết giảm nhẹ`. Sau khi đặt hai file
+nguồn vào `data/laws/source/` và chạy lại script xây dữ liệu, các văn bản này
+sẽ được tra cứu cùng toàn bộ dữ liệu luật. Số điều thực tế sẽ được script báo
+theo nội dung file nguồn, không ghi cố định trước.
+
 Đã kiểm tra: **không thiếu điều nào** ngoài các điều đã bị bãi bỏ hợp
 pháp (18 điều BLHS về người dưới 18 tuổi, do Luật Tư pháp người chưa
 thành niên 2024 thay thế).
