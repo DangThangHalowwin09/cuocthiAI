@@ -37,7 +37,7 @@ if api_key:
     os.environ["GOOGLE_API_KEY"] = api_key
     os.environ["GEMINI_API_KEY"] = api_key
 
-from core.file_parser import read_input_file  # noqa: E402
+from core.file_parser import read_input_file, detect_ocr_capability  # noqa: E402
 from core.pipeline import run_pipeline  # noqa: E402
 from core.docx_writer import write_result_docx  # noqa: E402
 from core.model_clients import ModelCallError  # noqa: E402
@@ -70,6 +70,13 @@ if (
     )
     st.stop()
 
+# ---------------------------------------------------------------------------
+# Phát hiện OCR engines khả dụng 1 lần mỗi session
+# ---------------------------------------------------------------------------
+if "ocr_status" not in st.session_state:
+    st.session_state["ocr_status"] = detect_ocr_capability()
+ocr_cap = st.session_state["ocr_status"]
+
 with st.sidebar:
     st.header("ℹ️ Thông tin hệ thống")
     st.markdown(
@@ -80,6 +87,67 @@ with st.sidebar:
         "- **Định dạng file:** .doc (Word 97-2003), .docx, .pdf\n"
         "- **Phạm vi:** Cáo trạng (Hình sự) + Phát biểu của KSV (Dân sự/Hành chính)"
     )
+    st.divider()
+
+    # ---------------------------------------------------------------
+    # KHỐI: CÀI ĐẶT OCR (đọc PDF ảnh/scan)
+    # ---------------------------------------------------------------
+    st.subheader("🔍 Cài đặt đọc PDF scan/ảnh (OCR)")
+    ocr_force = st.checkbox(
+        "Bắt buộc dùng OCR cho PDF",
+        value=False,
+        help="Bật này nếu biết chắc file đề thi là ảnh scan (PDF không có text layer). Hệ thống sẽ bỏ qua các engine extract text và đi thẳng đến nhận dạng chữ.",
+    )
+    ocr_dpi = st.slider(
+        "Độ phân giải OCR (DPI)",
+        min_value=150, max_value=400, value=250, step=25,
+        help="Càng cao càng chính xác nhưng càng chậm. 250 DPI là tốt cho tiếng Việt.",
+    )
+    ocr_langs = st.selectbox(
+        "Ngôn ngữ OCR",
+        options=["vie+eng", "vie", "eng"],
+        index=0,
+    )
+    ocr_max_pages = st.slider(
+        "Số trang tối đa OCR",
+        min_value=1, max_value=100, value=50, step=1,
+        help="Giới hạn để không bị chạy quá lâu với PDF lớn.",
+    )
+
+    # Trạng thái các engine OCR khả dụng
+    st.markdown("**Trạng thái công cụ hỗ trợ:**")
+    def _cap(ok, label):
+        return ("✅ " if ok else "❌ ") + label
+    st.caption(
+        _cap(ocr_cap["EasyOCR"], "EasyOCR (deep learning, tiếng Việt tốt)") + "\n\n" +
+        _cap(ocr_cap["Tesseract"], f"Tesseract OCR (vie={ocr_cap['Tesseract_vie']}, eng={ocr_cap['Tesseract_eng']})") + "\n\n" +
+        _cap(ocr_cap["Poppler_pdftotext"], "Poppler pdftotext (extract text mạnh)")
+    )
+    # Hướng dẫn cài đặt nếu EASY OCR chưa có
+    if not ocr_cap["EasyOCR"]:
+        st.warning(
+            "EasyOCR (công cụ OCR tiếng Việt tốt nhất) chưa có.\n\n"
+            "👉 Cài lệnh sau là đủ (không cần thêm gì):\n"
+            "```\npip install easyocr\n```\n"
+            "Lần đầu chạy sẽ tự tải model tiếng Việt ~100MB.",
+            icon="💡",
+        )
+    if not ocr_cap["Tesseract"]:
+        st.info(
+            "Tesseract OCR chưa cài trên máy. Nếu bạn muốn dùng thay vì EasyOCR:\n"
+            "1. Tải Tesseract UB-Mannheim và cài (chọn Vietnamese language pack)\n"
+            "2. Thêm `C:\\Program Files\\Tesseract-OCR` vào PATH\n"
+            "3. Chạy `pip install pytesseract`"
+        )
+    # Hướng dẫn nhanh nếu cả 2 đều chưa có
+    if not ocr_cap["EasyOCR"] and not ocr_cap["Tesseract"]:
+        st.error(
+            "⚠️ Chưa có engine OCR nào khả dụng trên máy này.\n\n"
+            "✅ **Cách nhanh nhất (chỉ 1 lệnh):** mở PowerShell rồi chạy:\n"
+            "```\ncd c:\\AIproject\\cuocthiAI\npip install easyocr\n```\n"
+            "Sau đó khởi động lại Streamlit (Ctrl+C rồi streamlit run app.py).",
+        )
+
     st.divider()
     st.caption(
         "Kết quả do AI hỗ trợ soạn. Kiểm sát viên có trách nhiệm kiểm "
@@ -103,11 +171,61 @@ if run_clicked and uploaded_file is not None:
         tmp_path = tmp.name
 
     with st.spinner("Đang đọc nội dung đề thi..."):
+        # Nếu user chọn Bắt buộc OCR và máy chưa có engine nào => báo trước
+        if suffix.lower() == ".pdf" and ocr_force:
+            if not ocr_cap["EasyOCR"] and not ocr_cap["Tesseract"]:
+                st.error(
+                    "❌ Bạn đã chọn 'Bắt buộc dùng OCR' nhưng máy chưa có engine OCR nào.\n\n"
+                    "👉 Cách nhanh nhất: mở PowerShell gõ:\n"
+                    "```\ncd c:\\AIproject\\cuocthiAI\npip install easyocr\n```\n"
+                    "Sau đó F5/khởi chạy lại app và thử lại. Hoặc bạn bỏ tích checkbox "
+                    "'Bắt buộc dùng OCR' để dùng engine extract text chuẩn (PDF có chữ)."
+                )
+                st.stop()
+            # Hiển thị thông báo "Đang OCR" vì nó sẽ lâu hơn extract text thường
+            st.info(
+                f"⚙️ Đã kích hoạt **BẮT BUỘC OCR** cho file này. "
+                f"DPI={ocr_dpi}, ngôn ngữ={ocr_langs}, giới hạn {ocr_max_pages} trang. "
+                f"Thời gian xử lý có thể kéo dài hơn so với PDF có text layer."
+            )
         try:
-            input_text = read_input_file(tmp_path)
+            input_text = read_input_file(
+                tmp_path,
+                pdf_force_ocr=ocr_force,
+                pdf_ocr_dpi=ocr_dpi,
+                pdf_ocr_langs=ocr_langs,
+                pdf_max_ocr_pages=ocr_max_pages,
+            )
         except Exception as e:
             st.error(f"Không đọc được file: {e}")
             st.stop()
+
+    # ---------------------------------------------------------------
+    # Banner cảnh báo khi detect là OCR text (đề phòng nhiều lỗi chính tả)
+    # ---------------------------------------------------------------
+    pdf_ocr_was_used = False
+    if suffix.lower() == ".pdf":
+        # Heuristic detect OCR output: tỉ lệ ký tự tiếng Việt dấu không khớp chuẩn / nhiều ký tự lạ
+        # Hoặc đơn giản: user force_ocr => chắc chắn là OCR
+        if ocr_force:
+            pdf_ocr_was_used = True
+        else:
+            # Tỉ lệ lỗi / ký tự rỗng (các engine text chuẩn đều cho kết quả score cao hơn)
+            # Gọi lại nội bộ để check: nếu input_text dài > 0 nhưng score thấp và
+            # có nhiều kiểu dấu tiếng Việt không chuẩn => báo cảnh báo (không chặn)
+            from core.file_parser import _score_extracted_text
+            sc = _score_extracted_text(input_text)
+            # Nếu quá thấp chứng minh extract thất bại -> có thể hệ thống đã dùng OCR
+            if 0 < sc < 3000 and len(input_text) > 200:
+                pdf_ocr_was_used = True
+    if pdf_ocr_was_used:
+        st.warning(
+            "⚠️ Nội dung được đọc bằng công cụ **OCR nhận dạng chữ từ ảnh**. "
+            "Có thể có lỗi chính tả (ví dụ: `đô` thành `ô`, `ọ` thành `ợ`). "
+            "Vui lòng **kiểm tra kỹ nội dung đề thi trong ô 'Xem nội dung đề đã trích xuất'** "
+            "dưới đây, chỉnh sửa nếu cần trước khi xem kết quả AI.",
+            icon="📷",
+        )
 
     with st.expander("📖 Xem nội dung đề đã trích xuất từ file"):
         st.text(input_text)

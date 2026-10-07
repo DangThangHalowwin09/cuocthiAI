@@ -104,16 +104,58 @@ def read_docx(path: str) -> str:
     return text
 
 
-def read_pdf(path: str) -> str:
-    """Đọc PDF bằng nhiều thư viện, giữ kết quả tốt nhất dựa theo heuristic điểm số.
-    Thứ tự ưu tiên:
-      1) pdfplumber (mạnh với bảng dữ liệu, mặc định của dự án)
-      2) PyMuPDF (fitz) — tốt với vector text, PDF tạo ra từ Word cũ
-      3) pdfminer.six — fallback gốc (đã được pdfplumber dùng nhưng gọi thẳng cho dễ debug)
-      4) OCR — fallback cuối, chỉ dùng khi 3 thư viện trên không lấy được chữ
-        (Yêu cầu: máy đã cài Tesseract + pytesseract/PIL; nếu không thì bỏ qua)
-    Giữ text có điểm _score_extracted_text cao nhất.
+def read_pdf(path: str, *,
+             force_ocr: bool = False,
+             ocr_dpi: int = 250,
+             ocr_langs: str = "vie+eng",
+             max_ocr_pages: int = 50) -> str:
+    """Đọc PDF bằng nhiều lớp fallback ROBUST, ưu tiên đọc được chữ hơn là độ sạch format.
+    Các bước xử lý (thứ tự ưu tiên):
+      0) Decrypt PDF (xoá owner password — cực kỳ phổ biến với VBHN/chặn copy) bằng PyMuPDF
+          -> lưu ra temp file không password nếu phát hiện mã hóa
+      1) pdfplumber (mạnh với bảng)
+      2) PyMuPDF/fitz (mạnh với vector text, custom ToUnicode CMap)
+      3) pdfminer.six (thẳng gọi, bỏ qua bọc pdfplumber)
+      4) pdftotext (poppler utils) — engine mạnh nhất nếu có cài trong PATH
+      5) OCR — fallback cuối, bắt buộc nếu force_ocr=True
+
+    Lưu ý quan trọng: Các đề thi PDF từ cơ quan nhà nước (VKSND, TAND, etc.)
+    thường bật cờ Owner Password (rỗng) + "Ngăn sao chép nội dung", khiến
+    pdfplumber/pdfminer tôn trọng flag và trả về chuỗi rỗng mặc dù xem được.
+    PyMuPDF tự động bỏ qua cờ này nên thường rescue được.
     """
+    # -------------------------------------------------
+    # BƯỚC 0: KIỂM TRA + DECRYPT PDF (nếu bị chặn copy / mã hóa owner pwd rỗng)
+    # -------------------------------------------------
+    working_path = path
+    tmp_decrypted = None
+    try:
+        try:
+            import pymupdf as fitz
+        except Exception:
+            import fitz  # alias cũ
+        with fitz.open(path) as doc:
+            if doc.is_encrypted:
+                # Thử decrypt với pass rỗng (case phổ biến nhất: chặn copy không cần pwd mở file)
+                ok = doc.authenticate("")
+                if not ok:
+                    # Thử các password default phổ biến
+                    for pwd in [" ", "1", "123", "admin", "password"]:
+                        if doc.authenticate(pwd):
+                            ok = True
+                            break
+                if ok:
+                    # Lưu ra temp KHÔNG MÃ HÓA để các engine khác đọc được
+                    import tempfile
+                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+                    tmp.close()
+                    doc.save(tmp.name, garbage=3, deflate=True)
+                    working_path = tmp.name
+                    tmp_decrypted = tmp.name
+    except Exception:
+        # Nếu decrypt không được, cứ tiếp tục đọc bằng path nguyên — có thể vẫn có engine đọc được
+        pass
+
     candidates = []
 
     # -------------------------------------------------
@@ -121,7 +163,7 @@ def read_pdf(path: str) -> str:
     # -------------------------------------------------
     try:
         parts = []
-        with pdfplumber.open(path) as pdf:
+        with pdfplumber.open(working_path) as pdf:
             for page in pdf.pages:
                 text = page.extract_text() or ""
                 if text.strip():
@@ -132,17 +174,28 @@ def read_pdf(path: str) -> str:
         candidates.append(("pdfplumber", ""))
 
     # -------------------------------------------------
-    # 2) PyMuPDF (fitz / pymupdf)
+    # 2) PyMuPDF (fitz / pymupdf) — mạnh nhất cho các PDF chặn copy
     # -------------------------------------------------
     try:
         try:
-            import pymupdf as fitz  # PyMuPDF >= 1.24+ (tên mới)
+            import pymupdf as fitz
         except Exception:
-            import fitz  # PyMuPDF cũ (deprecated alias)
+            import fitz
         parts = []
-        with fitz.open(path) as doc:
+        with fitz.open(working_path) as doc:
+            # Authenticated nữa cho chắc dù đã save
+            if doc.is_encrypted:
+                doc.authenticate("")
             for page in doc:
-                t = page.get_text("text") or ""
+                # Thử nhiều text extraction flags khác nhau
+                # flags: 3 (TEXT_PRESERVE_LIGATURES | TEXT_PRESERVE_WHITESPACE)
+                for flags in (3, 0, 1):
+                    try:
+                        t = page.get_text("text", flags=flags) or ""
+                        if t.strip():
+                            break
+                    except Exception:
+                        t = ""
                 if t.strip():
                     parts.append(t)
         text_fitz = "\n".join(parts)
@@ -151,16 +204,38 @@ def read_pdf(path: str) -> str:
         candidates.append(("PyMuPDF", ""))
 
     # -------------------------------------------------
-    # 3) pdfminer.six (thẳng gọi qua high-level API)
+    # 3) pdfminer.six
     # -------------------------------------------------
     try:
         from pdfminer.high_level import extract_text as _miner_extract
-        text_miner = _miner_extract(path) or ""
+        text_miner = _miner_extract(working_path) or ""
         candidates.append(("pdfminer.six", text_miner))
     except Exception:
         candidates.append(("pdfminer.six", ""))
 
-    # Chọn ra ứng viên có điểm tốt nhất
+    # -------------------------------------------------
+    # 4) pdftotext (poppler-utils)
+    #    Nếu máy người dùng có cài (Windows: tải poppler rồi add vào PATH)
+    #    pdftotext engine gốc của xpdf/poppler thường đọc được những thứ khó nhất
+    # -------------------------------------------------
+    try:
+        import shutil
+        import subprocess
+        exe = shutil.which("pdftotext")
+        if exe:
+            proc = subprocess.run(
+                [exe, "-layout", "-enc", "UTF-8", working_path, "-"],
+                capture_output=True,
+                timeout=60,
+                check=False,
+            )
+            if proc.returncode in (0, 3):  # 3 = có warning nhưng vẫn có text
+                text_poppler = proc.stdout.decode("utf-8", errors="replace") or ""
+                candidates.append(("pdftotext", text_poppler))
+    except Exception:
+        pass
+
+    # Chọn ứng viên có điểm cao nhất
     best_name, best_text = "", ""
     best_score = -1
     for name, text in candidates:
@@ -171,70 +246,190 @@ def read_pdf(path: str) -> str:
             best_name = name
 
     # -------------------------------------------------
-    # 4) Nếu điểm quá thấp => có thể PDF là ảnh scan => thử OCR
-    #    (OPTIONAL: không bắt buộc cài tesseract)
+    # 5) OCR: Nếu force_ocr=True HOẶC điểm quá thấp (hoặc 0)
     # -------------------------------------------------
-    if best_score < 15:
+    need_ocr = force_ocr or (best_score < 5)
+    if need_ocr:
         try:
-            ocr_text = _ocr_pdf_maybe(path)
+            ocr_text = _ocr_pdf_maybe(working_path, dpi=ocr_dpi,
+                                      langs=ocr_langs, max_pages=max_ocr_pages)
             ocr_score = _score_extracted_text(ocr_text)
             if ocr_score > best_score:
                 best_text = ocr_text
-                best_name = best_name + "+OCR"
+                best_name = best_name + "+OCR" if best_name else "OCR"
                 best_score = ocr_score
         except Exception:
             pass
 
+    # Dọn dẹp temp file decrypt nếu có
+    if tmp_decrypted:
+        try:
+            import os
+            os.unlink(tmp_decrypted)
+        except Exception:
+            pass
+
+    # -------------------------------------------------
+    # QUAN TRỌNG: KHÔNG được trả về "" nếu có ÍT NHẤT 1 chữ cái/token nào đó
+    # Ngay cả khi điểm số rất thấp (ví dụ 2), vẫn trả về vì đề thi có thể toàn số hiệu
+    # -------------------------------------------------
+    if not best_text.strip():
+        # Thuật toán cuối cùng: duyệt qua tất cả candidate tìm thằng có LENGTH > 0
+        for name, text in candidates:
+            if len(text.strip()) >= 15:
+                return text.strip()
+
     return best_text.strip()
 
 
-def _ocr_pdf_maybe(path: str) -> str:
-    """OCR PDF scan/ảnh nếu tesseract được cài (tùy chọn, không throw lỗi nếu không)."""
+def _ocr_pdf_maybe(path: str, *,
+                   dpi: int = 250,
+                   langs: str = "vie+eng",
+                   max_pages: int = 50) -> str:
+    """OCR PDF scan/ảnh. Ưu tiên EasyOCR (engine deep learning Python-only,
+    không cần cài Tesseract trên OS), fallback sang pytesseract (nếu có).
+
+    Lưu ý: EasyOCR phải được cài qua `pip install easyocr` (thêm vào requirements.txt).
+    Lần đầu chạy EasyOCR sẽ tự tải model (~100MB cho vie+eng) nên cần có mạng.
+    Sau lần đầu model được cache ổn định (~/.EasyOCR).
+    """
     import io
+    # ---------------------------------------------------------------
+    # Engine 1: EasyOCR (deep learning - tốt hơn cho tiếng Việt)
+    # ---------------------------------------------------------------
+    engines_tried = []
     try:
+        import easyocr
+        engines_tried.append("EasyOCR")
+        # Tách langs: "vie+eng" -> ["vi", "en"] (EasyOCR dùng short codes)
+        # EasyOCR language codes: vi = tiếng Việt, en = English
+        easy_lang_map = {"vie": "vi", "eng": "en", "en": "en", "vi": "vi", "vi_vn": "vi"}
+        easy_langs = []
+        for x in langs.replace("+", ",").split(","):
+            x = x.strip().lower()
+            if not x:
+                continue
+            mapped = easy_lang_map.get(x)
+            if mapped and mapped not in easy_langs:
+                easy_langs.append(mapped)
+        if not easy_langs:
+            easy_langs = ["vi", "en"]
+        # Lần đầu tải model xuống ~/.EasyOCR/model (gpu=False để chạy mọi máy)
         try:
-            import pymupdf as fitz  # PyMuPDF mới
+            reader = easyocr.Reader(easy_langs, gpu=False, verbose=False)
         except Exception:
-            import fitz  # PyMuPDF cũ
-        from PIL import Image
-        import pytesseract
-    except Exception:
-        return ""
+            reader = None
 
-    # Các ngôn ngữ ưu tiên: vie (tiếng Việt) + eng (tiếng Anh)
-    # Nếu user không có ngôn ngữ vie thì fallback sang eng
-    try:
-        _ = pytesseract.get_tesseract_version()
-    except Exception:
-        return ""
-
-    langs_candidates = ["vie+eng", "eng"]
-    best_ocr = ""
-    best_sc = -1
-    with fitz.open(path) as doc:
-        # Giới hạn 30 trang để không bị chạy quá lâu trong cuộc thi
-        pages_to_ocr = list(doc)[:30]
-        for lang in langs_candidates:
+        if reader:
             try:
+                try:
+                    import pymupdf as fitz
+                except Exception:
+                    import fitz
                 parts = []
-                for page in pages_to_ocr:
-                    # Render page ra ảnh 200 DPI (đủ OCR)
-                    pix = page.get_pixmap(dpi=200, alpha=False)
-                    img = Image.open(io.BytesIO(pix.tobytes("png")))
-                    txt = pytesseract.image_to_string(img, lang=lang)
-                    if txt.strip():
-                        parts.append(txt)
-                merged = "\n".join(parts)
-                sc = _score_extracted_text(merged)
-                if sc > best_sc:
-                    best_sc = sc
-                    best_ocr = merged
-            except pytesseract.TesseractError:
-                # Language pack không tồn tại, bỏ qua
-                continue
+                with fitz.open(path) as doc:
+                    pages = list(doc)[:max_pages]
+                    for page in pages:
+                        pix = page.get_pixmap(dpi=dpi, alpha=False)
+                        img_bytes = pix.tobytes("png")
+                        img_pil = Image.open(io.BytesIO(img_bytes))
+                        # detail=0 trả về text đơn giản (không tọa độ box)
+                        lines = reader.readtext(img_pil, detail=0, paragraph=True)
+                        if lines:
+                            parts.extend(lines)
+                if parts:
+                    return "\n".join(parts)
             except Exception:
-                continue
-    return best_ocr
+                pass
+    except Exception:
+        pass
+
+    # ---------------------------------------------------------------
+    # Engine 2: pytesseract (nếu máy cài Tesseract + pack ngôn ngữ)
+    # ---------------------------------------------------------------
+    try:
+        from PIL import Image
+        try:
+            import pymupdf as fitz
+        except Exception:
+            import fitz
+        import pytesseract
+        engines_tried.append("Tesseract")
+        try:
+            _ = pytesseract.get_tesseract_version()
+        except Exception:
+            return ""
+
+        # Tesseract dùng lang codes gốc: vie, eng
+        tess_lang = langs
+        best_ocr = ""
+        best_sc = -1
+        with fitz.open(path) as doc:
+            pages = list(doc)[:max_pages]
+            # thử cả user-lang + eng fallback
+            lang_tries = [tess_lang]
+            if tess_lang != "eng":
+                lang_tries.append("eng")
+            for lang in lang_tries:
+                try:
+                    parts = []
+                    for page in pages:
+                        pix = page.get_pixmap(dpi=dpi, alpha=False)
+                        img = Image.open(io.BytesIO(pix.tobytes("png")))
+                        txt = pytesseract.image_to_string(img, lang=lang)
+                        if txt.strip():
+                            parts.append(txt)
+                    merged = "\n".join(parts)
+                    sc = _score_extracted_text(merged)
+                    if sc > best_sc:
+                        best_sc = sc
+                        best_ocr = merged
+                except pytesseract.TesseractError:
+                    # Language pack không tồn tại
+                    continue
+                except Exception:
+                    continue
+        return best_ocr
+    except Exception:
+        pass
+    return ""
+
+
+def detect_ocr_capability() -> dict:
+    """Kiểm tra nhanh máy người dùng có những engine OCR nào (dùng cho UI hiển thị).
+    Trả về dict ví dụ:
+      {'EasyOCR': True, 'Tesseract': True, 'Tesseract_vie': True}
+    """
+    result = {"EasyOCR": False, "Tesseract": False, "Tesseract_vie": False,
+              "Tesseract_eng": False, "Poppler_pdftotext": False}
+    try:
+        import easyocr
+        result["EasyOCR"] = True
+    except Exception:
+        pass
+    try:
+        import shutil, subprocess
+        exe = shutil.which("pdftotext")
+        if exe:
+            result["Poppler_pdftotext"] = True
+    except Exception:
+        pass
+    try:
+        import pytesseract
+        version = pytesseract.get_tesseract_version()
+        result["Tesseract"] = bool(version)
+        try:
+            # Kiểm tra các pack ngôn ngữ
+            langs_raw = pytesseract.get_languages(config="")
+            if "vie" in langs_raw:
+                result["Tesseract_vie"] = True
+            if "eng" in langs_raw:
+                result["Tesseract_eng"] = True
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -745,23 +940,61 @@ def mime_type_for_path(path: str) -> str | None:
     return None
 
 
-def read_input_file(path: str) -> str:
+def read_input_file(path: str, *,
+                    pdf_force_ocr: bool = False,
+                    pdf_ocr_dpi: int = 250,
+                    pdf_ocr_langs: str = "vie+eng",
+                    pdf_max_ocr_pages: int = 50) -> str:
     ext = pathlib.Path(path).suffix.lower()
     if ext == ".doc":
-        text = read_doc(path)
+        try:
+            text = read_doc(path)
+        except ValueError as doc_err:
+            raise  # giữ lại thông báo chi tiết của read_doc()
     elif ext == ".docx":
         text = read_docx(path)
     elif ext == ".pdf":
-        text = read_pdf(path)
+        text = read_pdf(
+            path,
+            force_ocr=pdf_force_ocr,
+            ocr_dpi=pdf_ocr_dpi,
+            ocr_langs=pdf_ocr_langs,
+            max_ocr_pages=pdf_max_ocr_pages,
+        )
     else:
         raise ValueError(
             f"Định dạng file không được hỗ trợ: {ext} (chỉ nhận .doc, .docx hoặc .pdf)"
         )
 
     if not text.strip():
+        # Thông báo chi tiết hơn, phân biệt theo từng định dạng
+        if ext == ".pdf":
+            raise ValueError(
+                "Không trích xuất được nội dung văn bản từ file PDF này. "
+                "Nguyên nhân phổ biến (từ cao → thấp):\n"
+                "  1. File PDF bị CHẶN SAO CHÉP (Owner Password rỗng của cơ quan ban hành): "
+                "→ Cách khắc phục nhanh: Mở bằng Adobe Reader → In → chọn 'Microsoft Print to PDF' "
+                "→ Lưu thành file PDF mới rồi tải lên lại. HOẶC bật 'Bắt buộc dùng OCR' ở cài đặt bên dưới.\n"
+                "  2. File là PDF scan/ảnh (không có text layer): "
+                "→ TÍNH NĂNG ĐÃ CÓ: Bật checkbox 'Bắt buộc dùng OCR' ở bên trái (sidebar).\n"
+                "     * Nhanh nhất: Cài EasyOCR (pip install easyocr) — không cần cấu hình gì thêm (tự tải model tiếng Việt).\n"
+                "     * Hoặc cài Tesseract OCR + Vietnamese language pack.\n"
+                "  3. File dùng font subset / Encoding tùy chỉnh (ToUnicode CMap lỗi): "
+                "→ Mở bằng Word/Google Docs rồi 'Lưu thành' .docx.\n"
+                "  4. File bị hỏng / chưa tải xong: kiểm tra lại file nguồn."
+            )
+        if ext == ".doc":
+            raise ValueError(
+                "Không trích xuất được nội dung văn bản từ file .doc này. "
+                "Có thể: (1) .doc rất cũ dùng bảng mã VNI/TCVN3 không chuẩn; "
+                "(2) File là ảnh nhúng vào .doc; (3) Mật khẩu bảo vệ. "
+                "Cách khắc phục nhanh nhất: mở bằng Microsoft Word → Ctrl+A → Ctrl+C → "
+                "Tạo file .docx mới → Dán → Lưu rồi tải lên."
+            )
+        # .docx (không xảy ra thường, nhưng đề phòng)
         raise ValueError(
-            "Không trích xuất được nội dung văn bản từ file. "
-            "Nếu đây là file scan/ảnh, hãy chuyển sang PDF có chữ hoặc gõ lại nội dung. "
-            "Nếu là file .doc rất cũ, hãy mở bằng Word rồi Lưu thành .docx."
+            "Không trích xuất được nội dung văn bản từ file .docx. "
+            "Có thể file chỉ chứa ảnh, hoặc password bảo vệ. "
+            "Mở bằng Word → kiểm tra nội dung, Save As lại."
         )
     return text
