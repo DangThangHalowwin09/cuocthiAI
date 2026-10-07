@@ -202,11 +202,17 @@ def run_pipeline(
     provider: str = "gemini",
     case_type_override: str | None = None,
     progress_callback=None,
+    input_note: str | None = None,
 ) -> dict:
     """
     progress_callback(step_name: str, content: str) được gọi sau MỖI bước,
     dùng để Streamlit hiển thị tiến trình theo thời gian thực.
+
+    input_note: ghi chú của hệ thống đặt TRƯỚC nội dung hồ sơ khi đưa cho mô
+    hình (ví dụ pr.OCR_INPUT_NOTE khi hồ sơ được đọc bằng OCR từ bản scan).
     """
+    if input_note:
+        input_text = f"{input_note}\n\n{input_text}"
 
     def notify(step_name, content):
         if progress_callback:

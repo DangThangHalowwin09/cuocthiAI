@@ -17,8 +17,9 @@ import sys
 import unicodedata
 from pathlib import Path
 
+from collections import Counter
+
 from docx import Document
-import pdfplumber
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SOURCE_DIR = BASE_DIR / "data" / "laws" / "source"
@@ -27,8 +28,6 @@ OUTPUT_DIR = BASE_DIR / "data" / "laws"
 # Thêm thư mục gốc vào sys.path để import được các module trong core/
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
-
-from core.file_parser import read_doc  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # CẤU HÌNH NGUỒN — mỗi mục là 1 bộ luật, đọc theo đúng thứ tự file liệt kê
@@ -91,56 +90,155 @@ LAWS_CONFIG = [
     },
 ]
 
-DIEU_PATTERN_RAW = r"^Điều\s+(\d+)\.\s*(.*)$"
-STRUCTURE_PATTERNS_RAW = [
-    r"^Phần\s+(thứ\s+\w+|[IVXLC]+)",
-    r"^Chương\s+[IVXLC\d]+",
-    r"^Mục\s+\d+",
+# "Điều 12." và cả điều chèn thêm có chữ cái: "Điều 217a.", "Điều 506a."
+DIEU_PATTERN_RAW = r"^Điều\s+(\d+[a-zđ]?)\.\s*(.*)$"
+
+# Tiêu đề cấu trúc. Chấp nhận cả số La Mã lẫn số thường ("Mục I", "Mục 1"),
+# và cấp "Tiểu mục" (Bộ luật Dân sự).
+STRUCTURE_LEVELS = [
+    ("phan", r"^Phần\s+(thứ\s+\w+|[IVXLC]+)\b"),
+    ("chuong", r"^Chương\s+[IVXLC\d]+\b"),
+    ("tieu_muc", r"^Tiểu\s+mục\s+[IVXLC\d]+\b"),
+    ("muc", r"^Mục\s+[IVXLC\d]+\b"),
 ]
+# Cấp dưới của mỗi cấp — khi sang Chương mới thì Mục/Tiểu mục cũ hết hiệu lực.
+_CHILD_LEVELS = {
+    "phan": ("chuong", "muc", "tieu_muc"),
+    "chuong": ("muc", "tieu_muc"),
+    "muc": ("tieu_muc",),
+    "tieu_muc": (),
+}
+
+# Từ dòng này trở đi là phần xác thực + chú thích cuối của Văn bản hợp nhất,
+# không còn là nội dung điều luật.
+END_OF_LAW_MARKERS = ("XÁC THỰC VĂN BẢN HỢP NHẤT",)
+
+# Ký hiệu chú thích cuối văn bản kiểu "[12]" chèn giữa nội dung (VBHN dạng PDF).
+_ENDNOTE_MARK = re.compile(r"\[\d{1,3}\]")
+_SPACES = re.compile(r"[ \t  -​ 　]+")
 
 
 def normalize(text: str) -> str:
-    """Chuẩn hóa Unicode về dạng NFC, đồng thời sửa lỗi ký tự dễ nhầm lẫn
-    trong văn bản gốc (chuyển từ .doc/.pdf scan/OCR của Công báo):
-    - Chuẩn hóa NFC: một số dòng lưu ký tự có dấu ở dạng tổ hợp (NFD)
-      khác dạng chuẩn (NFC) dùng trong regex, khiến regex âm thầm KHÔNG
-      khớp một số dòng "Điều N." mà không báo lỗi gì.
-    - "Ð" (U+00D0, chữ Eth của Iceland) dễ bị gõ nhầm với "Đ" (U+0110,
-      chữ Đ tiếng Việt) vì hình dạng gần như giống hệt."""
+    """Chuẩn hóa văn bản luật trước khi tách điều:
+    - Unicode NFC: một số dòng lưu ký tự có dấu ở dạng tổ hợp (NFD), khiến
+      regex âm thầm KHÔNG khớp dòng "Điều N." mà không báo lỗi gì.
+    - "Ð" (U+00D0, chữ Eth) hay bị gõ nhầm thay "Đ" (U+0110).
+    - Khoảng trắng không ngắt (NBSP) và các loại khoảng trắng lạ → dấu cách
+      thường; nếu để nguyên thì việc so khớp cụm từ ("tình tiết giảm nhẹ")
+      sẽ trượt ở những chỗ dùng NBSP."""
     text = unicodedata.normalize("NFC", text)
-    text = text.replace("\u00d0", "\u0110")  # Ð (Eth) -> Đ (tiếng Việt)
-    return text
+    text = text.replace("Ð", "Đ")  # Ð (Eth) -> Đ (tiếng Việt)
+    text = _SPACES.sub(" ", text)
+    return text.strip()
 
 
 DIEU_PATTERN = re.compile(normalize(DIEU_PATTERN_RAW))
-STRUCTURE_PATTERNS = [re.compile(normalize(p), re.IGNORECASE) for p in STRUCTURE_PATTERNS_RAW]
+STRUCTURE_PATTERNS = [
+    (level, re.compile(normalize(p), re.IGNORECASE)) for level, p in STRUCTURE_LEVELS
+]
+# Dòng "trông giống" tiêu đề điều nhưng không khớp DIEU_PATTERN — dùng để
+# cảnh báo khi kiểm tra (ví dụ "Điều 5:" hoặc "Điều 5 .").
+LOOSE_DIEU_PATTERN = re.compile(normalize(r"^Điều\s*\d+[a-zđ]?\s*[:\-–.]"), re.IGNORECASE)
+
+
+def structure_level(text: str) -> str | None:
+    """Trả về cấp cấu trúc ("phan"/"chuong"/"muc"/"tieu_muc") nếu dòng là
+    tiêu đề cấu trúc, ngược lại None."""
+    for level, pattern in STRUCTURE_PATTERNS:
+        if pattern.match(text):
+            return level
+    return None
 
 
 def is_structure_heading(text: str) -> bool:
-    return any(p.match(text) for p in STRUCTURE_PATTERNS)
+    return structure_level(text) is not None
+
+
+def _is_title_line(text: str) -> bool:
+    """Dòng tên chương/mục: toàn chữ IN HOA (không có chữ thường)."""
+    return any(ch.isalpha() for ch in text) and text == text.upper()
+
+
+_CLAUSE_START = re.compile(r"^(\d{1,3}\.|[a-zđ]\)|[a-zđ]\.\d+\))\s")
+
+
+def read_paragraphs_from_pdf(path: Path) -> list[str]:
+    """Đọc PDF có lớp chữ và GHÉP LẠI các dòng bị ngắt giữa câu.
+
+    PDF lưu chữ theo từng dòng in trên trang, nên một khoản dài bị cắt thành
+    nhiều dòng. Nếu để nguyên: tiêu đề điều dài bị cụt ở dòng đầu, và cụm từ
+    vắt qua 2 dòng không còn so khớp được. Văn bản luật được căn đều hai
+    bên, nên dòng nào chạm lề phải thì chắc chắn còn nối tiếp sang dòng
+    sau; dòng kết thúc trước lề phải là dòng cuối của một đoạn."""
+    import pdfplumber
+
+    lines = []  # (text, x0, x1, in_đậm)
+    with pdfplumber.open(path) as pdf:
+        for page in pdf.pages:
+            for line in page.extract_text_lines():
+                text = normalize(_ENDNOTE_MARK.sub("", line["text"]))
+                if text:
+                    chars = line.get("chars") or [{}]
+                    bold = "bold" in str(chars[0].get("fontname", "")).lower()
+                    lines.append((text, line["x0"], line["x1"], bold))
+    if not lines:
+        return []
+
+    # Lề trái/phải = vị trí xuất hiện nhiều nhất.
+    left = Counter(round(x0) for _, x0, _, _ in lines).most_common(1)[0][0]
+    right = max(
+        x for x, n in Counter(round(x1) for _, _, x1, _ in lines).most_common(3)
+        if n >= len(lines) * 0.05
+    ) if len(lines) > 20 else max(x1 for _, _, x1, _ in lines)
+
+    paragraphs = []
+    current = ""
+    continues = False
+    prev_bold = None
+    for text, x0, x1, bold in lines:
+        # Đoạn căn trái (không căn đều): dòng trước chưa hết câu và dòng này
+        # mở đầu bằng chữ thường → chắc chắn vẫn là cùng một câu.
+        mid_sentence = (
+            bool(current)
+            and not current.rstrip().endswith((".", ";", ":"))
+            and text[:1].islower()
+            and not _CLAUSE_START.match(text)
+        )
+        starts_new = (
+            not (continues or mid_sentence)
+            # Tiêu đề điều in đậm, nội dung in thường: đổi kiểu chữ = sang đoạn mới
+            # (tránh nối nhầm nội dung vào tiêu đề khi tiêu đề vừa khít một dòng).
+            or bold != prev_bold
+            or DIEU_PATTERN.match(text)
+            or is_structure_heading(text)
+            # Dòng trước chạm lề phải nhưng đã hết câu, và dòng này mở đầu
+            # một khoản/điểm mới ("2. ...", "b) ...") → là đoạn mới.
+            or (_CLAUSE_START.match(text) and current.rstrip().endswith((".", ";", ":")))
+        )
+        if starts_new:
+            if current:
+                paragraphs.append(current)
+            current = text
+        else:
+            current += " " + text
+        prev_bold = bold
+        is_flush_left = abs(x0 - left) <= 3
+        continues = is_flush_left and x1 >= right - 6
+        # Tên chương in hoa căn giữa dài 2 dòng: dòng đầu gần chạm cả hai lề.
+        if not is_flush_left and _is_title_line(text) and x1 >= right - 30:
+            continues = True
+    if current:
+        paragraphs.append(current)
+    return paragraphs
 
 
 def read_paragraphs_from_docx(path: Path) -> list[str]:
     doc = Document(path)
     result = []
     for p in doc.paragraphs:
-        text = normalize(p.text.strip())
+        text = normalize(p.text)
         if text:
             result.append(text)
-    return result
-
-
-def read_paragraphs_from_pdf(path: Path) -> list[str]:
-    result = []
-    with pdfplumber.open(path) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text()
-            if not text:
-                continue
-            for line in text.split("\n"):
-                line = normalize(line.strip())
-                if line:
-                    result.append(line)
     return result
 
 
@@ -148,10 +246,12 @@ def read_paragraphs_from_doc(path: Path) -> list[str]:
     """Đọc file .doc (Word 97-2003) rồi tách thành từng dòng/đoạn.
     Gọi lại read_doc() đã viết trong core.file_parser để tận dụng
     logic parse PieceTable + fallback."""
+    from core.file_parser import read_doc  # import lười: chỉ cần khi nguồn là .doc
+
     raw_text = read_doc(str(path))
     result = []
-    for line in raw_text.split("\n"):
-        line = normalize(line.strip())
+    for line in re.split(r"[\r\n]+", raw_text):
+        line = normalize(line)
         if line:
             result.append(line)
     return result
@@ -175,35 +275,47 @@ def read_paragraphs_in_order(source_paths: list[Path]) -> list[str]:
 def parse_articles(paragraphs: list[str]) -> list[dict]:
     articles = []
     current = None
-    current_structure = {"phan": "", "chuong": "", "muc": ""}
+    structure = {"phan": "", "chuong": "", "muc": "", "tieu_muc": ""}
+    # Cấp cấu trúc vừa gặp và đang chờ dòng tên (IN HOA) ở các dòng kế tiếp.
+    # Trước đây các dòng tên chương này bị nối nhầm vào CUỐI điều đứng trước.
+    pending_level = None
 
     for text in paragraphs:
+        if any(text.startswith(marker) for marker in END_OF_LAW_MARKERS):
+            break
+
         m = DIEU_PATTERN.match(text)
         if m:
+            pending_level = None
             if current is not None:
                 articles.append(current)
-            dieu_so, tieu_de_dong_dau = m.group(1), m.group(2)
+            dieu_so, tieu_de = m.group(1), m.group(2)
             current = {
                 "dieu_so": dieu_so,
-                "tieu_de": tieu_de_dong_dau,
-                "noi_dung": tieu_de_dong_dau,
-                "phan": current_structure["phan"],
-                "chuong": current_structure["chuong"],
-                "muc": current_structure["muc"],
+                "tieu_de": tieu_de,
+                "noi_dung": tieu_de,
+                "phan": structure["phan"],
+                "chuong": structure["chuong"],
+                "muc": structure["muc"],
+                "tieu_muc": structure["tieu_muc"],
             }
             continue
 
-        if is_structure_heading(text):
-            if text.lower().startswith("phần"):
-                current_structure["phan"] = text
-                current_structure["chuong"] = ""
-                current_structure["muc"] = ""
-            elif text.lower().startswith("chương"):
-                current_structure["chuong"] = text
-                current_structure["muc"] = ""
-            elif text.lower().startswith("mục"):
-                current_structure["muc"] = text
+        level = structure_level(text)
+        if level:
+            structure[level] = text
+            for child in _CHILD_LEVELS[level]:
+                structure[child] = ""
+            pending_level = level
             continue
+
+        if pending_level and _is_title_line(text):
+            sep = " " if structure[pending_level].endswith((".", ":")) else " – "
+            if " – " in structure[pending_level]:
+                sep = " "  # dòng thứ 2 của cùng một tên chương
+            structure[pending_level] += sep + text
+            continue
+        pending_level = None
 
         if current is not None:
             current["noi_dung"] += "\n" + text
@@ -214,15 +326,27 @@ def parse_articles(paragraphs: list[str]) -> list[dict]:
     return articles
 
 
+def _dieu_key(dieu_so: str) -> tuple[int, str]:
+    """"217a" → (217, "a") để sắp xếp/so sánh số điều có chữ cái."""
+    m = re.match(r"(\d+)(.*)", dieu_so)
+    return int(m.group(1)), m.group(2)
+
+
 def validate_sequence(ten_luat: str, articles: list[dict], paragraphs: list[str]) -> None:
     if not articles:
         print(f"⚠️  CẢNH BÁO — {ten_luat}: không tách được điều nào! Kiểm tra lại nguồn.")
         return
 
-    numbers = [int(a["dieu_so"]) for a in articles]
+    lettered = [a["dieu_so"] for a in articles if not a["dieu_so"].isdigit()]
+    numbers = [int(a["dieu_so"]) for a in articles if a["dieu_so"].isdigit()]
+    all_ids = [a["dieu_so"] for a in articles]
     expected = list(range(numbers[0], numbers[-1] + 1))
     missing = sorted(set(expected) - set(numbers))
-    duplicates = [n for n in set(numbers) if numbers.count(n) > 1]
+    duplicates = sorted({n for n in all_ids if all_ids.count(n) > 1}, key=_dieu_key)
+    out_of_order = [
+        all_ids[i] for i in range(1, len(all_ids))
+        if _dieu_key(all_ids[i]) < _dieu_key(all_ids[i - 1])
+    ]
 
     def find_para_index(dieu_so: int):
         target = f"Điều {dieu_so}."
@@ -253,8 +377,17 @@ def validate_sequence(ten_luat: str, articles: list[dict], paragraphs: list[str]
                 is_repealed = True
         (repealed_numbers if is_repealed else genuinely_missing).extend(range(lo, hi + 1))
 
+    # Dòng trông giống tiêu đề điều nhưng không tách được (sai dấu chấm, v.v.)
+    unparsed_headings = [
+        p[:80] for p in paragraphs
+        if LOOSE_DIEU_PATTERN.match(p) and not DIEU_PATTERN.match(p)
+    ]
+    empty_articles = [a["dieu_so"] for a in articles if len(a["noi_dung"].strip()) < 20]
+
     print(f"--- {ten_luat} ---")
-    print(f"  Tổng số điều tách được: {len(articles)} (Điều {numbers[0]} → Điều {numbers[-1]})")
+    print(f"  Tổng số điều tách được: {len(articles)} (Điều {all_ids[0]} → Điều {all_ids[-1]})")
+    if lettered:
+        print(f"  ℹ️  {len(lettered)} điều chèn thêm (có chữ cái): {lettered}")
     if repealed_numbers:
         print(f"  ℹ️  {len(repealed_numbers)} điều đã bị BÃI BỎ hợp pháp: {repealed_numbers}")
     if genuinely_missing:
@@ -265,6 +398,14 @@ def validate_sequence(ten_luat: str, articles: list[dict], paragraphs: list[str]
         print(f"  ⚠️  CẢNH BÁO — trùng lặp số điều: {duplicates}")
     else:
         print("  ✅ Không có điều nào bị trùng số.")
+    if out_of_order:
+        print(f"  ⚠️  CẢNH BÁO — số điều không tăng dần tại: {out_of_order}")
+    if unparsed_headings:
+        print(f"  ⚠️  CẢNH BÁO — {len(unparsed_headings)} dòng giống tiêu đề điều nhưng KHÔNG tách được:")
+        for h in unparsed_headings[:10]:
+            print(f"       {h}")
+    if empty_articles:
+        print(f"  ℹ️  Điều có nội dung rất ngắn (thường là điều đã bãi bỏ): {empty_articles}")
 
 
 def build_one_law(config: dict) -> None:

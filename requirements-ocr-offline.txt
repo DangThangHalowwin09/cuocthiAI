@@ -1,0 +1,9 @@
+# TÙY CHỌN — chỉ cài khi cần OCR bản scan mà KHÔNG gửi ảnh lên Gemini
+# (máy không có mạng, hoặc tài liệu không được phép gửi ra ngoài).
+#
+#     pip install -r requirements-ocr-offline.txt
+#
+# EasyOCR kéo theo PyTorch (~2 GB), lần chạy đầu tải thêm model tiếng Việt
+# (~100 MB, cần mạng). Không nên cài trên gói hosting miễn phí (thiếu RAM).
+easyocr>=1.7
+opencv-python-headless>=4.8

@@ -51,6 +51,22 @@ NGUYÊN TẮC BẮT BUỘC (không được vi phạm trong bất kỳ trường
 """
 
 # ---------------------------------------------------------------------------
+# GHI CHÚ ĐẦU VÀO KHI HỒ SƠ ĐƯỢC ĐỌC BẰNG OCR (PDF scan / ảnh chụp)
+# Được chèn vào TRƯỚC nội dung hồ sơ ở Bước 1 và Bước 2 để mô hình không
+# "sửa giúp" các chỗ OCR đọc sai, mà đánh dấu theo đúng quy ước sẵn có.
+# ---------------------------------------------------------------------------
+OCR_INPUT_NOTE = """[LƯU Ý CỦA HỆ THỐNG — KHÔNG PHẢI NỘI DUNG HỒ SƠ]
+Văn bản hồ sơ dưới đây được NHẬN DẠNG TỰ ĐỘNG (OCR) từ bản scan/ảnh chụp nên
+có thể sai chữ, sai dấu, sai số. Khi xử lý:
+(1) Giữ nguyên họ tên, con số, ngày tháng, số tiền đúng như văn bản; KHÔNG tự
+    sửa theo phỏng đoán.
+(2) Chỗ có ký hiệu [không đọc được] hoặc chữ vô nghĩa do nhận dạng lỗi: coi là
+    thiếu thông tin và đánh dấu [THIẾU DỮ LIỆU: ...], không tự điền.
+(3) Nếu cùng một tên/con số xuất hiện với các cách viết khác nhau: ghi nhận là
+    [TÌNH TIẾT MÂU THUẪN - CẦN XÁC MINH: ...], không tự chọn một phương án.
+[HẾT LƯU Ý]"""
+
+# ---------------------------------------------------------------------------
 # BƯỚC 1: PHÂN LOẠI VỤ VIỆC
 # ---------------------------------------------------------------------------
 CLASSIFY_PROMPT = """Đọc nội dung hồ sơ vụ án dưới đây và xác định đây là:

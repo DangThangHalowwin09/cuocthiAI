@@ -68,7 +68,7 @@ def _score_articles(query_text: str, articles: list, top_n: int) -> list:
 
     normalized_query = _normalize(query_text)
     requested_article_numbers = {
-        number for number in re.findall(r"\b(?:điều\s*)?(\d+)\b", normalized_query)
+        number for number in re.findall(r"\b(?:điều\s*)?(\d+[a-zđ]?)\b", normalized_query)
     }
 
     def source_boost(article: dict) -> int:
