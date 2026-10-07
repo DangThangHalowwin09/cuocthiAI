@@ -15,6 +15,7 @@ import re
 from . import model_clients as mc
 from . import prompts as pr
 from . import law_lookup
+from .config import MAX_TOKENS_LONG
 
 
 _INTERNAL_CHECK_MARKER = "--- PHỤ LỤC KIỂM TRA NỘI BỘ"
@@ -107,9 +108,79 @@ def classify_case(input_text: str, provider: str = "gemini") -> str:
     return "DAN_SU_HANH_CHINH"
 
 
+def _clean_json_text(raw: str) -> str:
+    """Bỏ rào ```json và chữ thừa quanh JSON; nếu không parse được thì trả nguyên văn."""
+    text = (raw or "").strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start >= 0 and end > start:
+        candidate = text[start : end + 1]
+        try:
+            return json.dumps(json.loads(candidate), ensure_ascii=False, indent=2)
+        except json.JSONDecodeError:
+            return candidate
+    return text
+
+
 def extract_facts(input_text: str, case_type: str, provider: str = "gemini") -> str:
     template = pr.EXTRACT_PROMPT_HS if case_type == "HINH_SU" else pr.EXTRACT_PROMPT_DS
-    return mc.call_model(provider, pr.SYSTEM_BASE, template.format(input_text=input_text))
+    raw = mc.call_model(
+        provider, pr.SYSTEM_BASE, template.format(input_text=input_text),
+        max_tokens=MAX_TOKENS_LONG,
+    )
+    return _clean_json_text(raw)
+
+
+def _is_filled(value) -> bool:
+    text = str(value or "").strip()
+    return bool(text) and "THIẾU DỮ LIỆU" not in text.upper()
+
+
+def build_header_info(facts_json: str) -> dict | None:
+    """Dựng phần đầu Cáo trạng (tên cơ quan, số ký hiệu, địa danh, dòng
+    'VIỆN TRƯỞNG VIỆN KIỂM SÁT ...') từ trường vks_truy_to đã trích xuất.
+    Trả None nếu chưa xác định được thẩm quyền (khi đó giữ nguyên chỗ trống
+    trong mẫu để Kiểm sát viên tự điền)."""
+    try:
+        vks = json.loads(facts_json).get("vks_truy_to") or {}
+    except (json.JSONDecodeError, AttributeError):
+        return None
+    if not isinstance(vks, dict):
+        return None
+
+    ten_day_du = str(vks.get("ten_day_du") or "")
+    cap = str(vks.get("cap") or "").lower()
+    so_kv = str(vks.get("so_khu_vuc") or "").strip()
+    tinh = str(vks.get("tinh_thanh") or "").strip()
+
+    if not _is_filled(ten_day_du) and not _is_filled(tinh):
+        return None
+    if not so_kv:
+        match = re.search(r"khu\s*vực\s*(\d+)", ten_day_du, flags=re.IGNORECASE)
+        so_kv = match.group(1) if match else ""
+    if not _is_filled(tinh):
+        match = re.search(r"(?:tỉnh|thành phố)\s+(.+)$", ten_day_du, flags=re.IGNORECASE)
+        tinh = match.group(1).strip() if match else ""
+    if not tinh:
+        return None
+    if "khu vực" not in cap and "tỉnh" not in cap:
+        cap = "khu vực" if (so_kv or "khu vực" in ten_day_du.lower()) else "tỉnh"
+
+    tinh_hoa = tinh.upper()
+    if "khu vực" in cap:
+        unit_name = f"VIỆN KIỂM SÁT NHÂN DÂN KHU VỰC {so_kv} - {tinh_hoa}".replace("  ", " ")
+        unit_parent = f"VIỆN KIỂM SÁT NHÂN DÂN TỈNH {tinh_hoa}"
+        so_ky_hieu = f"Số: …/CT-VKSKV{so_kv}-…" if so_kv else "Số: …/CT-VKS…-…"
+    else:
+        unit_name = f"VIỆN KIỂM SÁT NHÂN DÂN TỈNH {tinh_hoa}"
+        unit_parent = "VIỆN KIỂM SÁT NHÂN DÂN TỐI CAO"
+        so_ky_hieu = "Số: …/CT-VKS…-…"
+    return {
+        "unit_name": unit_name,
+        "unit_parent": unit_parent,
+        "so_ky_hieu": so_ky_hieu,
+        "dia_danh": tinh,
+        "vien_truong": f"VIỆN TRƯỞNG {unit_name}",
+    }
 
 
 def lookup_laws(facts_json: str, case_type: str, top_n: int = 10) -> str:
@@ -143,6 +214,23 @@ def lookup_laws(facts_json: str, case_type: str, top_n: int = 10) -> str:
         query,
         top_n=max(top_n, 20) if case_type == "HINH_SU" else top_n,
     )
+    if case_type == "HINH_SU":
+        # Ghim ĐÚNG các điều BLHS mà hồ sơ đã nêu (tội danh trong quyết định khởi
+        # tố / kết luận điều tra) + Điều 51, 52 (tình tiết giảm nhẹ/tăng nặng),
+        # để bản thảo trích dẫn chính xác thay vì phụ thuộc điểm số từ khóa.
+        try:
+            cited = json.loads(facts_json).get("dieu_luat_blhs_duoc_nhac_toi") or []
+        except (json.JSONDecodeError, AttributeError):
+            cited = []
+        if isinstance(cited, str):
+            cited = re.findall(r"\d+[a-zđ]?", cited)
+        cited = [re.sub(r"\D*(\d+[a-zđ]?).*", r"\1", str(c)) for c in cited]
+        pinned = law_lookup.get_articles_by_numbers("blhs", [*cited, "51", "52"])
+        pinned_keys = {(a["ma_luat"], str(a["dieu_so"])) for a in pinned}
+        result["offline"] = pinned + [
+            a for a in result["offline"]
+            if (a["ma_luat"], str(a["dieu_so"])) not in pinned_keys
+        ]
     return law_lookup.format_articles_for_prompt(result)
 
 
@@ -174,7 +262,7 @@ def draft_document(facts_json: str, dieu_luat_lien_quan: str, case_type: str, pr
         mau_tham_chieu=mau,
         dieu_luat_lien_quan=dieu_luat_lien_quan,
     )
-    return mc.call_model(provider, pr.SYSTEM_BASE, prompt)
+    return mc.call_model(provider, pr.SYSTEM_BASE, prompt, max_tokens=MAX_TOKENS_LONG)
 
 
 def self_check(
@@ -190,7 +278,7 @@ def self_check(
         case_type=case_type,
         dieu_luat_lien_quan=dieu_luat_lien_quan,
     )
-    checked_text = mc.call_model(provider, pr.SYSTEM_BASE, prompt)
+    checked_text = mc.call_model(provider, pr.SYSTEM_BASE, prompt, max_tokens=MAX_TOKENS_LONG)
     document, appendix = split_internal_check(checked_text)
     document = _normalize_legal_terms(document)
     document = _preserve_ai_suggestions(document, draft_text)
@@ -240,6 +328,7 @@ def run_pipeline(
     return {
         "case_type": case_type,
         "is_hanh_chinh": is_hc,
+        "header": build_header_info(facts) if case_type == "HINH_SU" else None,
         "facts": facts,
         "dieu_luat_lien_quan": dieu_luat_lien_quan,
         "draft": draft,

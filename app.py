@@ -349,6 +349,7 @@ if run_clicked:
             result["case_type"],
             out_path,
             is_hanh_chinh=result.get("is_hanh_chinh", False),
+            header=result.get("header"),
         )
         with open(out_path, "rb") as f:
             docx_bytes = f.read()

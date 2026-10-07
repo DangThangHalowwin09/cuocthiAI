@@ -164,6 +164,17 @@ def _search_online_via_gemini(query_text: str, top_n: int = 5) -> str:
         return f"[LỖI khi tra cứu online: {e}]"
 
 
+def get_articles_by_numbers(ma_luat: str, dieu_so_list) -> list:
+    """Lấy ĐÚNG các điều theo số trong một bộ luật (ví dụ BLHS Điều 318, 178).
+    Số điều trùng nhau giữa các bộ luật nên phải chỉ rõ mã luật."""
+    wanted = [str(n).strip().lower() for n in dieu_so_list if str(n).strip()]
+    by_number = {
+        str(a.get("dieu_so")).lower(): a
+        for a in _load_all_laws() if a.get("ma_luat") == ma_luat
+    }
+    return [by_number[n] for n in dict.fromkeys(wanted) if n in by_number]
+
+
 def find_relevant_articles(query_text: str, top_n: int = 10) -> dict:
     """Điểm vào chính — trả về dict gồm kết quả offline (luôn có) và
     online (chỉ có nếu chế độ hybrid VÀ offline không tìm đủ)."""

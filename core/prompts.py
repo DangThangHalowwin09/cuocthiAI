@@ -84,24 +84,77 @@ CHỈ trả lời đúng một trong hai từ trên, không giải thích thêm.
 # ---------------------------------------------------------------------------
 # BƯỚC 2: TRÍCH XUẤT DỮ KIỆN CÓ CẤU TRÚC
 # ---------------------------------------------------------------------------
-EXTRACT_PROMPT_HS = """Nhiệm vụ: trích xuất dữ kiện từ hồ sơ vụ án HÌNH SỰ dưới đây
+EXTRACT_PROMPT_HS = """Nhiệm vụ: trích xuất ĐẦY ĐỦ dữ kiện từ hồ sơ vụ án HÌNH SỰ dưới đây
 thành định dạng JSON có cấu trúc. Chỉ lấy thông tin CÓ TRONG hồ sơ.
-Trường nào không có thông tin thì ghi giá trị "THIẾU DỮ LIỆU".
+
+QUY TẮC TRÍCH XUẤT:
+- Đọc kỹ TOÀN BỘ hồ sơ (phần căn cứ, nội dung vụ án, lý lịch, vật chứng, kết
+  luận…). Hồ sơ thường là Bản kết luận điều tra hoặc tóm tắt tình huống: số,
+  ngày, cơ quan ra quyết định, lý lịch từng bị can… thường nằm ngay ở đó.
+- CHÉP NGUYÊN VĂN số hiệu, ngày tháng, tên cơ quan, họ tên, địa chỉ, số tiền.
+  Không tóm tắt làm mất chi tiết, không đổi cách viết.
+- Chỉ ghi "THIẾU DỮ LIỆU" cho một trường khi hồ sơ THẬT SỰ không nhắc tới ở
+  bất kỳ chỗ nào. Nếu hồ sơ chỉ có một phần (ví dụ chỉ có năm sinh) thì ghi
+  đúng phần đó (ví dụ "1966"), không ghi THIẾU DỮ LIỆU.
+- "tien_an", "tien_su": chép đúng như mục "Tiền án, tiền sự" của hồ sơ. Nếu
+  hồ sơ ghi "Không" thì ghi "Không"; nếu hồ sơ để trống mục này thì ghi
+  "THIẾU DỮ LIỆU" — KHÔNG tự suy ra là "không có". Các bản án/xử phạt liệt kê
+  ở mục "Nhân thân" thì đưa vào "nhan_than", không trộn vào tien_an.
+- Mỗi bị can là một phần tử riêng; sắp xếp theo vai trò từ cao xuống thấp
+  (chủ mưu/cầm đầu/chủ chốt → đồng phạm tích cực → giúp sức).
 
 Cấu trúc JSON cần trả về:
 {{
-  "bi_can": [{{"ho_ten": "", "nam_sinh": "", "vai_tro": ""}}],
-  "bi_hai": [{{"ho_ten": ""}}],
-   "tuoi_tai_thoi_diem_pham_toi": "",
-   "la_nguoi_duoi_18_tuoi": "có | không | THIẾU DỮ LIỆU",
+  "vks_truy_to": {{
+    "cap": "khu vực | tỉnh | THIẾU DỮ LIỆU",
+    "so_khu_vuc": "số hiệu VKSND khu vực nếu có (ví dụ 4), không có thì để rỗng",
+    "tinh_thanh": "tên tỉnh/thành phố, ví dụ Nghệ An",
+    "ten_day_du": "ví dụ: Viện kiểm sát nhân dân khu vực 4 tỉnh Nghệ An",
+    "co_so_xac_dinh": "nêu ngắn gọn dựa vào đâu (VKS đã phê chuẩn khởi tố bị can / nơi xảy ra tội phạm / cơ quan điều tra)"
+  }},
+  "co_quan_dieu_tra": "",
+  "noi_xay_ra_toi_pham": "",
+  "quyet_dinh_khoi_to_vu_an": [
+    {{"so": "", "ngay": "", "co_quan": "", "toi_danh": "", "dieu_khoan": "", "ghi_chu": "quyết định thay đổi/bổ sung nếu có"}}
+  ],
+  "quyet_dinh_khoi_to_bi_can": [
+    {{"bi_can": "", "so": "", "ngay": "", "co_quan": "",
+      "phe_chuan": {{"so": "", "ngay": "", "co_quan": ""}},
+      "toi_danh": "", "dieu_khoan": ""}}
+  ],
+  "quyet_dinh_khac": [
+    {{"loai": "nhập | tách | phục hồi | thay đổi, bổ sung | khác", "so": "", "ngay": "", "co_quan": ""}}
+  ],
+  "ket_luan_dieu_tra": {{"so": "", "ngay": "", "co_quan": "", "ket_luan_bo_sung": ""}},
+  "bi_can": [
+    {{
+      "ho_ten": "", "ten_goi_khac": "", "gioi_tinh": "",
+      "ngay_sinh": "", "noi_sinh": "",
+      "noi_cu_tru": "", "quoc_tich": "", "dan_toc": "", "ton_giao": "",
+      "nghe_nghiep": "", "chuc_vu": "", "trinh_do_hoc_van": "",
+      "cha_me_vo_con": "", "tien_an": "", "tien_su": "",
+      "nhan_than": "chép ĐẦY ĐỦ từng mục nhân thân hồ sơ nêu (ngày, cơ quan, hình thức xử phạt, tội danh/hành vi); không có thì để rỗng",
+      "bien_phap_ngan_chan": "loại biện pháp, từ ngày nào, tại đâu",
+      "nam_sinh": "", "vai_tro": "",
+      "toi_danh_dieu_khoan_theo_ho_so": "tội danh, điểm/khoản/điều theo hồ sơ nêu"
+    }}
+  ],
+  "bi_hai": [{{"ho_ten": "", "thong_tin_khac": ""}}],
+  "nguoi_lien_quan_nguoi_lam_chung": [{{"ho_ten": "", "tu_cach": ""}}],
+  "tuoi_tai_thoi_diem_pham_toi": "",
+  "la_nguoi_duoi_18_tuoi": "có | không | THIẾU DỮ LIỆU",
   "toi_danh_nghi_van": "",
+  "dieu_luat_blhs_duoc_nhac_toi": ["chỉ số điều của Bộ luật Hình sự được hồ sơ nêu, ví dụ 318, 178"],
   "hanh_vi_pham_toi_tom_tat": "",
   "thoi_gian_dia_diem": "",
   "chung_cu": ["..."],
-  "tinh_tiet_tang_nang": ["..."],
-  "tinh_tiet_giam_nhe": ["..."],
+  "tinh_tiet_tang_nang": ["tình tiết tăng nặng của TỪNG bị can, ghi rõ ai + điều khoản nếu hồ sơ nêu"],
+  "tinh_tiet_giam_nhe": ["tình tiết giảm nhẹ của TỪNG bị can, ghi rõ ai + điều khoản nếu hồ sơ nêu"],
+  "vat_chung_tai_lieu": ["đồ vật, tiền, phương tiện thu giữ/tạm giữ và việc xử lý"],
+  "phan_dan_su": "bồi thường, khắc phục hậu quả, yêu cầu của bị hại (nếu có)",
+  "ho_so": {{"so_tap": "", "so_to": ""}},
   "qua_trinh_dieu_tra_tom_tat": "",
-  "ghi_chu_thieu_du_lieu": ["liệt kê các thông tin quan trọng còn thiếu"]
+  "ghi_chu_thieu_du_lieu": ["liệt kê các thông tin quan trọng THẬT SỰ không có trong hồ sơ"]
 }}
 
 CHỈ trả về JSON hợp lệ, không thêm văn bản giải thích trước/sau.
@@ -363,38 +416,59 @@ theo đúng cấu trúc mẫu tham chiếu. Cấu trúc bắt buộc:
 - KẾT LUẬN (tổng hợp hành vi, lý lịch bị can, khẳng định tội danh + điều luật)
 - QUYẾT ĐỊNH (truy tố, hồ sơ kèm theo)
 
-CHỈ trích dẫn điều luật có trong mục "ĐIỀU LUẬT LIÊN QUAN" bên dưới. Nếu
-JSON có trường ghi "THIẾU DỮ LIỆU" ở mục quan trọng, phải thể hiện rõ
-[THIẾU DỮ LIỆU: ...] tại đúng vị trí trong bản thảo, không tự bịa cho đủ.
+NGUYÊN TẮC ĐIỀN DỮ LIỆU — QUAN TRỌNG NHẤT:
+(a) DỮ KIỆN ĐÃ CÓ THÌ PHẢI ĐIỀN. Cấm viết "số... ngày... tháng... năm..." hay
+    [THIẾU DỮ LIỆU] cho thông tin mà JSON đã có. Chỉ để dấu hiệu thiếu khi
+    JSON thật sự ghi "THIẾU DỮ LIỆU" hoặc để trống.
+(b) PHẦN CĂN CỨ: mỗi quyết định một đoạn "Căn cứ ..." điền đủ số, ngày, cơ quan
+    ban hành, tội danh, điều khoản lấy từ "quyet_dinh_khoi_to_vu_an",
+    "quyet_dinh_khoi_to_bi_can" (mỗi bị can một đoạn, kèm quyết định phê chuẩn
+    của Viện kiểm sát nếu có), "quyet_dinh_khac", "ket_luan_dieu_tra".
+(c) TÌNH TIẾT TĂNG NẶNG / GIẢM NHẸ: liệt kê cụ thể từng tình tiết của từng bị
+    can từ "tinh_tiet_tang_nang", "tinh_tiet_giam_nhe", kèm điểm/khoản Điều 51,
+    Điều 52 BLHS nếu hồ sơ nêu hoặc điều luật tra cứu đủ để xác định. Nếu hồ
+    sơ không có tình tiết nào thì viết rõ "không có tình tiết tăng nặng
+    trách nhiệm hình sự" / "không có tình tiết giảm nhẹ..." theo hồ sơ — chỉ
+    ghi [THIẾU DỮ LIỆU] khi hồ sơ không cho phép kết luận.
+(d) TỘI DANH: nếu hồ sơ đã nêu tội danh, điểm, khoản, điều (kết luận điều tra,
+    quyết định khởi tố) thì ghi đúng như vậy trong phần Khẳng định và phần
+    QUYẾT ĐỊNH, KHÔNG viết thành gợi ý hay [THIẾU DỮ LIỆU]. Nếu hồ sơ chưa nêu
+    nhưng hành vi và con số trong hồ sơ ĐỦ dấu hiệu của một tội mà điều luật
+    đó có trong mục "ĐIỀU LUẬT LIÊN QUAN" thì HÃY KẾT LUẬN tội danh và xác
+    định điểm/khoản/điều bằng cách đối chiếu trực tiếp với văn bản điều luật
+    (ví dụ mức tiền, vai trò tổ chức, tái phạm), đồng thời ghi thêm một dòng
+    đúng mẫu "[GỢI Ý CỦA AI, KSV CẦN XÁC NHẬN LẠI: ... ]" nêu căn cứ đối
+    chiếu. Chỉ dùng [THIẾU DỮ LIỆU: tội danh] khi hồ sơ không đủ dấu hiệu
+    của bất kỳ tội nào trong điều luật đã tra cứu.
+(e) Khi hồ sơ có nhiều bị can, KẾT LUẬN phải nêu riêng từng bị can: phạm tội
+    gì, điều khoản nào, áp dụng tình tiết nào.
 
-Nếu dữ kiện mô tả đủ dấu hiệu khách quan của hành vi nhưng chưa có tội
-danh/điều khoản chính thức, phải đưa ra mục "GỢI Ý PHÁP LÝ" ngay tại phần
-KẾT LUẬN, dựa trên điều luật đã tra cứu. Gợi ý phải ghi đúng mẫu:
-"[GỢI Ý CỦA AI, KSV CẦN XÁC NHẬN LẠI: có thể xem xét tội ..., theo ...]".
-Ví dụ, nếu hồ sơ thể hiện dùng gậy gỗ là hung khí nguy hiểm, gây tổn hại
-10% sức khỏe, có thể gợi ý xem xét Điều 134 Bộ luật Hình sự nếu điều luật
-đó có trong tài liệu tra cứu. Không được trình bày gợi ý này như kết luận
-truy tố và không tự điền điểm/khoản nếu dữ kiện hoặc tài liệu luật chưa đủ.
-Khi dữ kiện đủ để nhận diện hướng pháp lý nhưng chưa đủ để kết luận chính
-thức, không được xóa gợi ý rồi thay bằng [THIẾU DỮ LIỆU: tội danh]. Phải
-giữ đồng thời gợi ý có cảnh báo và đánh dấu thiếu dữ liệu ở phần kết luận
-chính thức nếu cần.
-
-Phần lý lịch bị can phải trình bày theo khung điền nhanh, mỗi bị can một
-khối, không lặp [THIẾU DỮ LIỆU] ở mọi dòng. Dùng đúng cấu trúc:
-1. Bị can: [HỌ TÊN]
-- Tên gọi khác: [giá trị hoặc THIẾU DỮ LIỆU] - Giới tính: [giá trị]
+LÝ LỊCH BỊ CAN: mỗi bị can một khối, đánh số THỨ TỰ 1, 2, 3, ... (không lặp
+số 1), sắp xếp theo vai trò từ cao xuống thấp. Dùng đúng cấu trúc:
+[SỐ THỨ TỰ]. Bị can: [HỌ TÊN]
+- Tên gọi khác: [giá trị] - Giới tính: [giá trị]
 - Sinh ngày: [ngày sinh] tại: [nơi sinh]
 - Cư trú: [địa chỉ]
 - Quốc tịch: [giá trị] - Dân tộc: [giá trị] - Tôn giáo: [giá trị]
-- Nghề nghiệp: [giá trị] - Tiền án, tiền sự: [giá trị]
-Chỉ ghi [THIẾU DỮ LIỆU] một lần ở cuối dòng/khối khi nhiều trường cùng
-chưa có dữ liệu; không tự điền giá trị thay thế.
+- Nghề nghiệp: [giá trị] - Trình độ học vấn: [giá trị]
+- Họ tên cha, mẹ, vợ/chồng, con: [giá trị]
+- Tiền án, tiền sự: [giá trị]
+- Nhân thân: [liệt kê đầy đủ từng mục trong "nhan_than"; bỏ dòng này nếu JSON không có nhân thân]
+- Biện pháp ngăn chặn, biện pháp cưỡng chế đang áp dụng: [giá trị]
+Điền giá trị lấy từ JSON. Trường nào JSON không có thì ghi [THIẾU DỮ LIỆU],
+nhưng nếu nhiều trường liền nhau cùng thiếu thì gộp thành MỘT dấu
+[THIẾU DỮ LIỆU: ...] duy nhất cho cả dòng. Chỉ có năm sinh thì ghi đúng năm sinh.
+
+Hai tiêu đề KẾT LUẬN và QUYẾT ĐỊNH phải nằm RIÊNG MỘT DÒNG, chỉ gồm đúng chữ
+"KẾT LUẬN" / "QUYẾT ĐỊNH" (không thêm chú thích, ngoặc đơn hay ký hiệu).
+
+CHỈ trích dẫn điều luật có trong mục "ĐIỀU LUẬT LIÊN QUAN" bên dưới. Không
+tự bịa tình tiết, số liệu, tên người không có trong JSON.
 
 CHỈ xuất phần nội dung từ "Căn cứ..." đến hết phần "QUYẾT ĐỊNH". Không
 xuất quốc hiệu, tiêu ngữ, tên cơ quan, số ký hiệu, địa danh ngày tháng,
-tiêu đề CÁO TRẠNG, phần Nơi nhận, chức danh hoặc chữ ký; các phần đó đã
-được giữ nguyên trong template mẫu 156.
+tiêu đề CÁO TRẠNG, dòng "VIỆN TRƯỞNG VIỆN KIỂM SÁT ...", phần Nơi nhận, chức
+danh hoặc chữ ký; các phần đó đã được giữ nguyên/điền trong template mẫu 156.
 
 --- MẪU THAM CHIẾU ---
 {mau_tham_chieu}
@@ -451,6 +525,13 @@ THẢO dưới đây, đối chiếu với DỮ KIỆN GỐC (JSON), và thực 
    - Không tìm thấy căn cứ pháp luật phù hợp → đánh dấu [CẦN KIỂM TRA LẠI ĐIỀU LUẬT].
    - Tình tiết mâu thuẫn giữa các phần của hồ sơ → đánh dấu [TÌNH TIẾT MÂU THUẪN -
      CẦN XÁC MINH: mô tả mâu thuẫn], không tự chọn phương án nào.
+   - TUYỆT ĐỐI không đổi thông tin ĐÃ CÓ trong dữ kiện gốc thành [THIẾU DỮ
+     LIỆU] hay "số... ngày...". Nếu bản thảo để trống/THIẾU ở chỗ dữ kiện gốc
+     đã có (số quyết định, ngày, cơ quan, lý lịch, tình tiết, tội danh, điều
+     khoản) thì PHẢI điền từ dữ kiện gốc vào.
+   - Giữ nguyên đánh số THỨ TỰ 1, 2, 3... của khối lý lịch bị can (không để
+     tất cả cùng số 1) và giữ hai tiêu đề KẾT LUẬN, QUYẾT ĐỊNH nằm riêng
+     một dòng, không kèm chú thích.
     - Dòng có nhãn [GỢI Ý CỦA AI, KSV CẦN XÁC NHẬN LẠI: ...] là đề xuất
        hỗ trợ, không phải kết luận truy tố. Nếu đề xuất khớp với điều luật
        trong tài liệu tham chiếu và không trái dữ kiện, phải giữ nguyên;

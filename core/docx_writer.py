@@ -4,10 +4,12 @@ Xuất văn bản kết quả (Cáo trạng / Phát biểu của Kiểm sát vi�
 05/3/2020 của Chính phủ về công tác văn thư.
 """
 
+import copy
 import os
+import re
 import zipfile
 from pathlib import Path
-from xml.etree import ElementTree
+from lxml import etree as ElementTree  # lxml giữ nguyên tiền tố namespace (ElementTree chuẩn làm Word báo file hỏng)
 
 from docx import Document
 from docx.shared import Pt, Mm, Cm
@@ -34,6 +36,10 @@ SUBTITLES = {
 DEFAULT_TEMPLATE_PATH = (
     Path(__file__).resolve().parents[1] / "data" / "templates" / "156-Cáo trạng.docx"
 )
+
+
+CENTERED_HEADINGS = {"KẾT LUẬN", "QUYẾT ĐỊNH"}
+BI_CAN_HEADING = re.compile(r"^\d+\.\s*Bị can\b")
 
 
 def _set_font(run, size: int, bold: bool = False, italic: bool = False):
@@ -116,8 +122,16 @@ def _add_body_paragraph_after(marker: Paragraph, text: str) -> Paragraph:
         text.upper() == text and len(text) < 60 and any(c.isalpha() for c in text)
     )
 
-    if is_section_header:
+    if text.strip(" :.").upper() in CENTERED_HEADINGS:
+        # KẾT LUẬN / QUYẾT ĐỊNH: căn giữa (Ctrl+E), in đậm, không thụt đầu dòng
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         _set_single_spacing(paragraph, space_before=6, space_after=6)
+        _add_run(paragraph, text.strip(" :."), size=14, bold=True)
+    elif is_section_header:
+        _set_single_spacing(paragraph, space_before=6, space_after=6)
+        _add_run(paragraph, text, size=14, bold=True)
+    elif BI_CAN_HEADING.match(text):
+        _set_single_spacing(paragraph, space_before=6, space_after=3, indent=True)
         _add_run(paragraph, text, size=14, bold=True)
     else:
         _set_single_spacing(paragraph, space_after=6, indent=True)
@@ -198,6 +212,14 @@ def _remove_template_notes(output_path: str):
                         for reference in list(parent):
                             if reference.tag == reference_tag:
                                 parent.remove(reference)
+                data = ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
+            elif item.filename == "word/settings.xml":
+                # settings.xml còn trỏ tới dấu phân cách trong footnotes/endnotes đã xóa
+                # -> Word báo "tệp bị hỏng" nếu không gỡ các khai báo này.
+                root = ElementTree.fromstring(data)
+                for tag in ("footnotePr", "endnotePr"):
+                    for element in root.findall(f"{{{main_ns}}}{tag}"):
+                        root.remove(element)
                 data = ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
             elif item.filename == "[Content_Types].xml":
                 root = ElementTree.fromstring(data)
@@ -309,12 +331,64 @@ def _replace_sample_body(doc: Document, final_text: str) -> bool:
     return True
 
 
+def _set_paragraph_text(paragraph: Paragraph, text: str, bold: bool | None = None):
+    """Ghi đè nội dung đoạn nhưng giữ định dạng của run đầu tiên (xóa các run còn lại)."""
+    runs = paragraph.runs
+    if not runs:
+        run = paragraph.add_run(text)
+        _set_font(run, 12, bold=bool(bold))
+        return
+    runs[0].text = text
+    if bold is not None:
+        runs[0].bold = bold
+    for run in runs[1:]:
+        run._element.getparent().remove(run._element)
+
+
+def _apply_header(doc: Document, header: dict | None):
+    """Điền tên cơ quan, số ký hiệu, địa danh, dòng 'VIỆN TRƯỞNG VIỆN KIỂM SÁT...'
+    theo thẩm quyền đã xác định. header=None: giữ nguyên chỗ trống trong mẫu."""
+    if not header or not doc.tables:
+        return
+    left, right = doc.tables[0].cell(0, 0), doc.tables[0].cell(0, 1)
+
+    unit_paragraph = next(
+        (p for p in left.paragraphs if p.text.strip().startswith("VIỆN KIỂM SÁT")), None
+    )
+    if unit_paragraph is not None:
+        parent_element = copy.deepcopy(unit_paragraph._p)
+        unit_paragraph._p.addprevious(parent_element)
+        parent = Paragraph(parent_element, unit_paragraph._parent)
+        parent.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        _set_paragraph_text(parent, header["unit_parent"], bold=False)
+        unit_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        _set_paragraph_text(unit_paragraph, header["unit_name"], bold=True)
+
+    number_paragraph = next((p for p in left.paragraphs if p.text.strip().startswith("Số")), None)
+    if number_paragraph is not None:
+        _set_paragraph_text(number_paragraph, header["so_ky_hieu"])
+
+    date_paragraph = next((p for p in right.paragraphs if "ngày" in p.text), None)
+    if date_paragraph is not None:
+        for run in date_paragraph.runs:
+            if run.text.strip().startswith("…"):
+                run.text = run.text.replace("…", header["dia_danh"], 1)
+                break
+
+    chief = next(
+        (p for p in doc.paragraphs if p.text.strip().startswith("VIỆN TRƯỞNG VIỆN KIỂM")), None
+    )
+    if chief is not None:
+        _set_paragraph_text(chief, header["vien_truong"], bold=True)
+
+
 def _write_from_template(
     final_text: str,
     output_path: str,
     template_path: str,
     unit_name: str,
     unit_parent: str,
+    header: dict | None = None,
 ) -> str:
     template = Path(template_path)
     if template.suffix.lower() != ".docx":
@@ -357,6 +431,7 @@ def _write_from_template(
             if line:
                 previous = _add_body_paragraph_after(previous, line)
 
+    _apply_header(doc, header)
     _set_recipients(doc)
     _append_appendix_after_document(doc, appendix or "")
 
@@ -418,6 +493,7 @@ def write_result_docx(
     unit_name: str = "VIỆN KIỂM SÁT NHÂN DÂN TỈNH NGHỆ AN",
     unit_parent: str = "VIỆN KIỂM SÁT NHÂN DÂN TỐI CAO",
     template_path: str | None = None,
+    header: dict | None = None,
 ) -> str:
     template_path = template_path or os.environ.get("CAO_TRANG_TEMPLATE_PATH")
     if template_path or DEFAULT_TEMPLATE_PATH.is_file():
@@ -427,6 +503,7 @@ def write_result_docx(
             template_path or str(DEFAULT_TEMPLATE_PATH),
             unit_name,
             unit_parent,
+            header,
         )
     if case_type == "HINH_SU":
         raise FileNotFoundError(

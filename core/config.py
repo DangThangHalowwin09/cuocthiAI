@@ -38,3 +38,7 @@ GEMINI_MODEL_FALLBACKS = (
 LAW_SEARCH_MODE = "offline"
 
 MAX_TOKENS_DEFAULT = 4000
+
+# Các bước trích xuất / soạn thảo / tự kiểm tra sinh văn bản dài (JSON lý lịch
+# nhiều bị can, cả bản cáo trạng) — 4000 token sẽ làm văn bản bị cắt giữa chừng.
+MAX_TOKENS_LONG = 16000
