@@ -77,6 +77,7 @@ with st.sidebar:
         "- **Nguồn luật:** 8 bộ luật đã nạp sẵn — BLHS, BLTTHS, BLDS, "
         "BLTTDS, Luật sửa đổi BLTTDS/LTTHC 2025, LTTHC, Luật Đất đai, "
         "Bộ luật Lao động (tra cứu tự động, không lên mạng)\n"
+        "- **Định dạng file:** .doc (Word 97-2003), .docx, .pdf\n"
         "- **Phạm vi:** Cáo trạng (Hình sự) + Phát biểu của KSV (Dân sự/Hành chính)"
     )
     st.divider()
@@ -88,7 +89,10 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 # MAIN: tải đề thi & chạy xử lý
 # ---------------------------------------------------------------------------
-uploaded_file = st.file_uploader("📄 Tải lên file đề thi (.docx hoặc .pdf)", type=["docx", "pdf"])
+uploaded_file = st.file_uploader(
+    "📄 Tải lên file đề thi (.doc, .docx hoặc .pdf)",
+    type=["doc", "docx", "pdf"],
+)
 
 run_clicked = st.button("🚀 Chạy xử lý", type="primary", disabled=uploaded_file is None)
 
@@ -179,4 +183,4 @@ if run_clicked and uploaded_file is not None:
         "[CẦN KIỂM TRA LẠI ĐIỀU LUẬT], [TÌNH TIẾT MÂU THUẪN]."
     )
 else:
-    st.info("Tải lên file đề thi hình sự (.docx hoặc .pdf) ở trên rồi bấm **Chạy xử lý**.")
+    st.info("Tải lên file đề thi (.doc, .docx hoặc .pdf) ở trên rồi bấm **Chạy xử lý**.")

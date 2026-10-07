@@ -1,6 +1,6 @@
 """
 Script CHẠY 1 LẦN (hoặc chạy lại khi luật có sửa đổi) — tách toàn văn
-NHIỀU bộ luật (.docx và/hoặc .pdf) thành dữ liệu có cấu trúc (JSON), mỗi
+NHIỀU bộ luật (.doc, .docx và/hoặc .pdf) thành dữ liệu có cấu trúc (JSON), mỗi
 điều 1 mục, để hệ thống tra cứu theo từ khóa khi chạy thật (không cần
 AI, không cần lên mạng).
 
@@ -23,6 +23,12 @@ import pdfplumber
 BASE_DIR = Path(__file__).resolve().parent.parent
 SOURCE_DIR = BASE_DIR / "data" / "laws" / "source"
 OUTPUT_DIR = BASE_DIR / "data" / "laws"
+
+# Thêm thư mục gốc vào sys.path để import được các module trong core/
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from core.file_parser import read_doc  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # CẤU HÌNH NGUỒN — mỗi mục là 1 bộ luật, đọc theo đúng thứ tự file liệt kê
@@ -138,12 +144,28 @@ def read_paragraphs_from_pdf(path: Path) -> list[str]:
     return result
 
 
+def read_paragraphs_from_doc(path: Path) -> list[str]:
+    """Đọc file .doc (Word 97-2003) rồi tách thành từng dòng/đoạn.
+    Gọi lại read_doc() đã viết trong core.file_parser để tận dụng
+    logic parse PieceTable + fallback."""
+    raw_text = read_doc(str(path))
+    result = []
+    for line in raw_text.split("\n"):
+        line = normalize(line.strip())
+        if line:
+            result.append(line)
+    return result
+
+
 def read_paragraphs_in_order(source_paths: list[Path]) -> list[str]:
     all_paras = []
     for path in source_paths:
-        if path.suffix.lower() == ".docx":
+        ext = path.suffix.lower()
+        if ext == ".doc":
+            all_paras.extend(read_paragraphs_from_doc(path))
+        elif ext == ".docx":
             all_paras.extend(read_paragraphs_from_docx(path))
-        elif path.suffix.lower() == ".pdf":
+        elif ext == ".pdf":
             all_paras.extend(read_paragraphs_from_pdf(path))
         else:
             raise ValueError(f"Không hỗ trợ định dạng: {path}")

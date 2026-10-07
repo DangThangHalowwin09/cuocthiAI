@@ -12,6 +12,15 @@ DEFAULT_MODELS = {
     "gemini": "gemini-3.5-flash-lite",
 }
 
+# Nếu model mặc định bị Google gỡ (404), thử lần lượt các tên còn lại.
+GEMINI_MODEL_FALLBACKS = (
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-3-flash-lite",
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash",
+)
+
 # ---------------------------------------------------------------------------
 # CHẾ ĐỘ TRA CỨU LUẬT — đổi giá trị này để chuyển chế độ (KHÔNG hiển thị
 # cho người dùng cuối chọn, chỉ đội kỹ thuật cấu hình trước khi deploy):
