@@ -98,8 +98,14 @@ QUY TẮC TRÍCH XUẤT:
   đúng phần đó (ví dụ "1966"), không ghi THIẾU DỮ LIỆU.
 - "tien_an", "tien_su": chép đúng như mục "Tiền án, tiền sự" của hồ sơ. Nếu
   hồ sơ ghi "Không" thì ghi "Không"; nếu hồ sơ để trống mục này thì ghi
-  "THIẾU DỮ LIỆU" — KHÔNG tự suy ra là "không có". Các bản án/xử phạt liệt kê
-  ở mục "Nhân thân" thì đưa vào "nhan_than", không trộn vào tien_an.
+  "THIẾU DỮ LIỆU" — KHÔNG tự suy ra là "không có". Các bản án/xử phạt hành
+  chính liệt kê ở mục "Nhân thân" thì đưa NGUYÊN VĂN vào "nhan_than", TUYỆT
+  ĐỐI không chuyển thành tiền án/tiền sự (đó là đánh giá pháp lý của Kiểm sát viên).
+- "vai_tro": CHỈ ghi vai trò nếu hồ sơ nêu rõ (chủ mưu, cầm đầu, giúp sức,
+  người thực hành…). Hồ sơ không nêu thì ghi "THIẾU DỮ LIỆU" — không tự đặt
+  vai trò. Giữ nguyên THỨ TỰ các bị can như hồ sơ liệt kê.
+- Hành vi: ghi riêng hành vi CỤ THỂ của TỪNG bị can (làm gì, ở đâu, dùng vật gì,
+  đối với ai, hậu quả), chép sát hồ sơ.
 - Mỗi bị can là một phần tử riêng; sắp xếp theo vai trò từ cao xuống thấp
   (chủ mưu/cầm đầu/chủ chốt → đồng phạm tích cực → giúp sức).
 
@@ -146,6 +152,11 @@ Cấu trúc JSON cần trả về:
   "toi_danh_nghi_van": "",
   "dieu_luat_blhs_duoc_nhac_toi": ["chỉ số điều của Bộ luật Hình sự được hồ sơ nêu, ví dụ 318, 178"],
   "hanh_vi_pham_toi_tom_tat": "",
+  "hanh_vi_tung_bi_can": [{{"bi_can": "", "hanh_vi_cu_the": "", "toi_danh_dieu_khoan": ""}}],
+  "thiet_hai_va_ty_le_thuong_tich": ["giá trị thiệt hại tài sản, tỷ lệ tổn thương cơ thể, số tiền định giá… kèm đối tượng bị thiệt hại"],
+  "hanh_vi_khong_truy_to_hoac_xu_ly_khac": ["hành vi/đối tượng hồ sơ nêu là không cấu thành tội phạm, xử lý hành chính, nhắc nhở, không khởi tố… kèm lý do và căn cứ"],
+  "nguyen_nhan_dieu_kien": "",
+  "toa_an_co_tham_quyen": "tên Tòa án nếu hồ sơ nêu hoặc suy ra chắc chắn từ nơi xảy ra tội phạm/Viện kiểm sát truy tố; không chắc thì THIẾU DỮ LIỆU",
   "thoi_gian_dia_diem": "",
   "chung_cu": ["..."],
   "tinh_tiet_tang_nang": ["tình tiết tăng nặng của TỪNG bị can, ghi rõ ai + điều khoản nếu hồ sơ nêu"],
@@ -442,6 +453,25 @@ NGUYÊN TẮC ĐIỀN DỮ LIỆU — QUAN TRỌNG NHẤT:
     của bất kỳ tội nào trong điều luật đã tra cứu.
 (e) Khi hồ sơ có nhiều bị can, KẾT LUẬN phải nêu riêng từng bị can: phạm tội
     gì, điều khoản nào, áp dụng tình tiết nào.
+(f) THỨ TỰ BỊ CAN: dùng MỘT thứ tự duy nhất (thứ tự trong "bi_can") ở MỌI nơi:
+    căn cứ khởi tố, tình tiết, lý lịch, khẳng định, quyết định truy tố.
+(g) KHÔNG TỰ ĐẶT VAI TRÒ: chỉ nêu "chủ mưu", "cầm đầu", "đồng phạm tích cực",
+    "giúp sức"… khi JSON có ghi. Hồ sơ không nêu thì chỉ mô tả hành vi cụ thể
+    của từng người, không gán nhãn vai trò.
+(h) TIỀN ÁN, TIỀN SỰ, NHÂN THÂN: chép đúng JSON. Không đổi các lần xử phạt
+    hành chính / bản án ở "nhan_than" thành tiền án hoặc tiền sự. Nếu "tien_an"
+    hoặc "tien_su" là THIẾU DỮ LIỆU thì ghi [THIẾU DỮ LIỆU: hồ sơ để trống mục
+    tiền án, tiền sự], không tự điền "Không".
+(i) DIỄN BIẾN HÀNH VI PHẠM TỘI phải ĐẦY ĐỦ, không tóm tắt một đoạn chung:
+    - mở đầu: thời gian, địa điểm, nguyên nhân/mâu thuẫn, diễn biến chung;
+    - tiếp theo: MỖI bị can một đoạn nêu hành vi cụ thể ("hanh_vi_tung_bi_can");
+    - hậu quả: thiệt hại tài sản (kèm giá trị), tỷ lệ thương tích, người bị hại
+      ("thiet_hai_va_ty_le_thuong_tich");
+    - nguyên nhân, điều kiện ("nguyen_nhan_dieu_kien");
+    - nêu các hành vi/đối tượng mà hồ sơ đã xử lý khác (không truy tố, xử phạt
+      hành chính, nhắc nhở) trong "hanh_vi_khong_truy_to_hoac_xu_ly_khac".
+(j) TÒA ÁN trong QUYẾT ĐỊNH: ghi tên Tòa án ở "toa_an_co_tham_quyen" nếu có; chỉ
+    khi đó trống mới ghi [THIẾU DỮ LIỆU: tên Tòa án có thẩm quyền].
 
 LÝ LỊCH BỊ CAN: mỗi bị can một khối, đánh số THỨ TỰ 1, 2, 3, ... (không lặp
 số 1), sắp xếp theo vai trò từ cao xuống thấp. Dùng đúng cấu trúc:
@@ -532,6 +562,13 @@ THẢO dưới đây, đối chiếu với DỮ KIỆN GỐC (JSON), và thực 
    - Giữ nguyên đánh số THỨ TỰ 1, 2, 3... của khối lý lịch bị can (không để
      tất cả cùng số 1) và giữ hai tiêu đề KẾT LUẬN, QUYẾT ĐỊNH nằm riêng
      một dòng, không kèm chú thích.
+   - Xóa mọi nhãn vai trò (chủ mưu, cầm đầu, đồng phạm tích cực, giúp sức…)
+     nếu dữ kiện gốc không ghi vai trò đó.
+   - Nếu bản thảo ghi một người có "tiền án/tiền sự" hoặc "Tiền án: Không" mà
+     dữ kiện gốc để trống hoặc chỉ có ở mục nhân thân thì sửa lại theo dữ kiện gốc.
+   - Thứ tự các bị can phải giống nhau ở lý lịch, khẳng định và quyết định truy tố.
+   - Nếu phần diễn biến chỉ là một đoạn chung mà dữ kiện gốc có hành vi riêng của
+     từng bị can, giá trị thiệt hại, tỷ lệ thương tích thì bổ sung đầy đủ.
     - Dòng có nhãn [GỢI Ý CỦA AI, KSV CẦN XÁC NHẬN LẠI: ...] là đề xuất
        hỗ trợ, không phải kết luận truy tố. Nếu đề xuất khớp với điều luật
        trong tài liệu tham chiếu và không trái dữ kiện, phải giữ nguyên;

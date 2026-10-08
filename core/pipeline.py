@@ -11,6 +11,7 @@
 
 import json
 import re
+import unicodedata
 
 from . import model_clients as mc
 from . import prompts as pr
@@ -128,6 +129,62 @@ def extract_facts(input_text: str, case_type: str, provider: str = "gemini") -> 
         max_tokens=MAX_TOKENS_LONG,
     )
     return _clean_json_text(raw)
+
+
+def _fold(text: str) -> str:
+    """Bỏ dấu + chữ thường để so khớp tên (OCR hay lẫn 'Thủy'/'Thuỷ')."""
+    decomposed = unicodedata.normalize("NFD", text or "")
+    stripped = "".join(c for c in decomposed if unicodedata.category(c) != "Mn")
+    return re.sub(r"\s+", " ", stripped.replace("đ", "d").replace("Đ", "D")).strip().lower()
+
+
+def fix_blank_criminal_record(facts_json: str, input_text: str) -> str:
+    """Nếu mục 'Tiền án, tiền sự' của một bị can TRỐNG trong hồ sơ gốc thì ép
+    tien_an/tien_su = THIẾU DỮ LIỆU. Mô hình hay tự điền 'Không' (hoặc biến
+    các lần xử phạt ở mục Nhân thân thành tiền sự) — đây là đánh giá pháp lý
+    của Kiểm sát viên, không được tự suy ra."""
+    try:
+        facts = json.loads(facts_json)
+        suspects = facts.get("bi_can") or []
+    except (json.JSONDecodeError, AttributeError):
+        return facts_json
+
+    headings = list(re.finditer(r"(?im)^\s*\d+\.\s*Họ\s*tên\s*:\s*(.+?)\s*(?:Giới\s*tính|$)", input_text))
+    changed = False
+    for index, heading in enumerate(headings):
+        name = _fold(heading.group(1))
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(input_text)
+        block = input_text[heading.end():end]
+        record = re.search(r"Tiền\s*án,\s*tiền\s*sự\s*:?([^\n]*)\n", block, flags=re.IGNORECASE)
+        if not record or record.group(1).strip(" .:;-"):
+            continue
+        for suspect in suspects:
+            if _fold(suspect.get("ho_ten", "")) == name:
+                suspect["tien_an"] = suspect["tien_su"] = "THIẾU DỮ LIỆU"
+                changed = True
+    return json.dumps(facts, ensure_ascii=False, indent=2) if changed else facts_json
+
+
+_BODY_END_PATTERN = re.compile(
+    r"(?im)^\W*Danh sách những người Viện kiểm sát đề nghị Tòa án triệu tập[^\n]*\n?"
+)
+
+
+def trim_to_body(text: str) -> str:
+    """Chỉ giữ phần từ 'Căn cứ...' đến hết mục QUYẾT ĐỊNH. Mô hình đôi khi vẫn
+    chèn lại quốc hiệu/tên cơ quan ở đầu và Nơi nhận/chữ ký ở cuối, trong khi
+    template mẫu 156 đã có sẵn các phần đó."""
+    document, appendix = split_internal_check(text)
+    start = re.search(r"(?m)^\s*Căn cứ", document)
+    if start:
+        document = document[start.start():]
+    end = None
+    for end in _BODY_END_PATTERN.finditer(document):
+        pass
+    if end is not None:
+        document = document[: end.end()]
+    document = document.strip()
+    return f"{document}\n\n{appendix}".strip() if appendix else document
 
 
 def _is_filled(value) -> bool:
@@ -282,6 +339,7 @@ def self_check(
     document, appendix = split_internal_check(checked_text)
     document = _normalize_legal_terms(document)
     document = _preserve_ai_suggestions(document, draft_text)
+    document = trim_to_body(document) if case_type == "HINH_SU" else document
     return document, appendix
 
 
@@ -310,6 +368,8 @@ def run_pipeline(
     notify("classify", case_type)
 
     facts = extract_facts(input_text, case_type, provider)
+    if case_type == "HINH_SU":
+        facts = fix_blank_criminal_record(facts, input_text)
     notify("extract", facts)
 
     is_hc = case_type == "DAN_SU_HANH_CHINH" and _is_hanh_chinh(facts)
