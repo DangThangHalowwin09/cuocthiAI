@@ -13,7 +13,9 @@ API key được đọc từ biến môi trường:
 """
 
 import os
-from .config import DEFAULT_MODELS, MAX_TOKENS_DEFAULT
+import time
+
+from .config import DEFAULT_MODELS, GEMINI_BACKUP_MODEL, MAX_TOKENS_DEFAULT
 
 
 class ModelCallError(RuntimeError):
@@ -96,19 +98,44 @@ def call_gemini(system_prompt: str, user_prompt: str, model: str = None,
         )
 
     client = genai.Client(api_key=api_key)
-    try:
-        response = client.models.generate_content(
-            model=model or DEFAULT_MODELS["gemini"],
-            contents=user_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                max_output_tokens=max_tokens,
-            ),
-        )
-    except Exception as e:  # noqa: BLE001
-        raise ModelCallError(f"Lỗi gọi Gemini API: {e}") from e
+    primary = model or DEFAULT_MODELS["gemini"]
+    # Model chính thử 2 lần (quá tải thường chỉ thoáng qua), rồi chuyển sang
+    # model dự phòng (nếu khác model chính).
+    attempts = [primary, primary]
+    if GEMINI_BACKUP_MODEL and GEMINI_BACKUP_MODEL != primary:
+        attempts.append(GEMINI_BACKUP_MODEL)
 
-    return response.text
+    last_error = None
+    for index, name in enumerate(attempts):
+        try:
+            response = client.models.generate_content(
+                model=name,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    max_output_tokens=max_tokens,
+                ),
+            )
+            if response.text:
+                return response.text
+            last_error = RuntimeError("Model trả về nội dung rỗng")
+        except Exception as e:  # noqa: BLE001
+            last_error = e
+            if not _is_retryable(e):
+                raise ModelCallError(f"Lỗi gọi Gemini API: {e}") from e
+        if index == 0:
+            time.sleep(3)
+    raise ModelCallError(f"Lỗi gọi Gemini API (đã thử cả model dự phòng): {last_error}") from last_error
+
+
+def _is_retryable(error: Exception) -> bool:
+    """Lỗi quá tải / quota / model không tồn tại → đáng thử lại hoặc đổi model."""
+    text = f"{type(error).__name__} {error}".lower()
+    return any(
+        marker in text
+        for marker in ("503", "429", "404", "500", "unavailable", "overload",
+                       "resource_exhausted", "quota", "not found", "deadline", "timeout")
+    )
 
 
 _PROVIDERS = {

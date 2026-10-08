@@ -96,11 +96,15 @@ QUY TẮC TRÍCH XUẤT:
 - Chỉ ghi "THIẾU DỮ LIỆU" cho một trường khi hồ sơ THẬT SỰ không nhắc tới ở
   bất kỳ chỗ nào. Nếu hồ sơ chỉ có một phần (ví dụ chỉ có năm sinh) thì ghi
   đúng phần đó (ví dụ "1966"), không ghi THIẾU DỮ LIỆU.
-- "tien_an", "tien_su": chép đúng như mục "Tiền án, tiền sự" của hồ sơ. Nếu
-  hồ sơ ghi "Không" thì ghi "Không"; nếu hồ sơ để trống mục này thì ghi
-  "THIẾU DỮ LIỆU" — KHÔNG tự suy ra là "không có". Các bản án/xử phạt hành
-  chính liệt kê ở mục "Nhân thân" thì đưa NGUYÊN VĂN vào "nhan_than", TUYỆT
-  ĐỐI không chuyển thành tiền án/tiền sự (đó là đánh giá pháp lý của Kiểm sát viên).
+- "tien_an", "tien_su": chép đúng như mục "Tiền án, tiền sự" của hồ sơ. Hồ sơ
+  không nêu / để trống thì ghi "Không". Các bản án/xử phạt hành chính liệt
+  kê ở mục "Nhân thân" thì đưa NGUYÊN VĂN vào "nhan_than", TUYỆT ĐỐI không
+  chuyển thành tiền án/tiền sự (đó là đánh giá pháp lý của Kiểm sát viên).
+- "nhan_than", "bien_phap_ngan_chan": hồ sơ không có dữ liệu thì ghi "Không"
+  (KHÔNG ghi THIẾU DỮ LIỆU cho hai trường này).
+- "dien_bien_vu_an_nguyen_van": CHÉP NGUYÊN VĂN, ĐẦY ĐỦ, từng câu từng chữ,
+  toàn bộ phần diễn biến / nội dung vụ án của hồ sơ (từ lúc bắt đầu đến khi
+  kết thúc sự việc). TUYỆT ĐỐI không tóm tắt, không rút gọn, không bỏ đoạn.
 - "vai_tro": CHỈ ghi vai trò nếu hồ sơ nêu rõ (chủ mưu, cầm đầu, giúp sức,
   người thực hành…). Hồ sơ không nêu thì ghi "THIẾU DỮ LIỆU" — không tự đặt
   vai trò. Giữ nguyên THỨ TỰ các bị can như hồ sơ liệt kê.
@@ -139,8 +143,8 @@ Cấu trúc JSON cần trả về:
       "noi_cu_tru": "", "quoc_tich": "", "dan_toc": "", "ton_giao": "",
       "nghe_nghiep": "", "chuc_vu": "", "trinh_do_hoc_van": "",
       "cha_me_vo_con": "", "tien_an": "", "tien_su": "",
-      "nhan_than": "chép ĐẦY ĐỦ từng mục nhân thân hồ sơ nêu (ngày, cơ quan, hình thức xử phạt, tội danh/hành vi); không có thì để rỗng",
-      "bien_phap_ngan_chan": "loại biện pháp, từ ngày nào, tại đâu",
+      "nhan_than": "chép ĐẦY ĐỦ từng mục nhân thân hồ sơ nêu (ngày, cơ quan, hình thức xử phạt, tội danh/hành vi); không có thì ghi Không",
+      "bien_phap_ngan_chan": "loại biện pháp, từ ngày nào, tại đâu; không có thì ghi Không",
       "nam_sinh": "", "vai_tro": "",
       "toi_danh_dieu_khoan_theo_ho_so": "tội danh, điểm/khoản/điều theo hồ sơ nêu"
     }}
@@ -152,6 +156,7 @@ Cấu trúc JSON cần trả về:
   "toi_danh_nghi_van": "",
   "dieu_luat_blhs_duoc_nhac_toi": ["chỉ số điều của Bộ luật Hình sự được hồ sơ nêu, ví dụ 318, 178"],
   "hanh_vi_pham_toi_tom_tat": "",
+  "dien_bien_vu_an_nguyen_van": "toàn bộ phần diễn biến vụ án, chép nguyên văn đầy đủ",
   "hanh_vi_tung_bi_can": [{{"bi_can": "", "hanh_vi_cu_the": "", "toi_danh_dieu_khoan": ""}}],
   "thiet_hai_va_ty_le_thuong_tich": ["giá trị thiệt hại tài sản, tỷ lệ tổn thương cơ thể, số tiền định giá… kèm đối tượng bị thiệt hại"],
   "hanh_vi_khong_truy_to_hoac_xu_ly_khac": ["hành vi/đối tượng hồ sơ nêu là không cấu thành tội phạm, xử lý hành chính, nhắc nhở, không khởi tố… kèm lý do và căn cứ"],
@@ -163,7 +168,7 @@ Cấu trúc JSON cần trả về:
   "tinh_tiet_giam_nhe": ["tình tiết giảm nhẹ của TỪNG bị can, ghi rõ ai + điều khoản nếu hồ sơ nêu"],
   "vat_chung_tai_lieu": ["đồ vật, tiền, phương tiện thu giữ/tạm giữ và việc xử lý"],
   "phan_dan_su": "bồi thường, khắc phục hậu quả, yêu cầu của bị hại (nếu có)",
-  "ho_so": {{"so_tap": "", "so_to": ""}},
+  "ho_so": {{"so_tap": "để rỗng nếu hồ sơ không nêu", "so_to": "để rỗng nếu hồ sơ không nêu"}},
   "qua_trinh_dieu_tra_tom_tat": "",
   "ghi_chu_thieu_du_lieu": ["liệt kê các thông tin quan trọng THẬT SỰ không có trong hồ sơ"]
 }}
@@ -458,18 +463,25 @@ NGUYÊN TẮC ĐIỀN DỮ LIỆU — QUAN TRỌNG NHẤT:
 (g) KHÔNG TỰ ĐẶT VAI TRÒ: chỉ nêu "chủ mưu", "cầm đầu", "đồng phạm tích cực",
     "giúp sức"… khi JSON có ghi. Hồ sơ không nêu thì chỉ mô tả hành vi cụ thể
     của từng người, không gán nhãn vai trò.
-(h) TIỀN ÁN, TIỀN SỰ, NHÂN THÂN: chép đúng JSON. Không đổi các lần xử phạt
-    hành chính / bản án ở "nhan_than" thành tiền án hoặc tiền sự. Nếu "tien_an"
-    hoặc "tien_su" là THIẾU DỮ LIỆU thì ghi [THIẾU DỮ LIỆU: hồ sơ để trống mục
-    tiền án, tiền sự], không tự điền "Không".
-(i) DIỄN BIẾN HÀNH VI PHẠM TỘI phải ĐẦY ĐỦ, không tóm tắt một đoạn chung:
-    - mở đầu: thời gian, địa điểm, nguyên nhân/mâu thuẫn, diễn biến chung;
-    - tiếp theo: MỖI bị can một đoạn nêu hành vi cụ thể ("hanh_vi_tung_bi_can");
-    - hậu quả: thiệt hại tài sản (kèm giá trị), tỷ lệ thương tích, người bị hại
-      ("thiet_hai_va_ty_le_thuong_tich");
-    - nguyên nhân, điều kiện ("nguyen_nhan_dieu_kien");
-    - nêu các hành vi/đối tượng mà hồ sơ đã xử lý khác (không truy tố, xử phạt
-      hành chính, nhắc nhở) trong "hanh_vi_khong_truy_to_hoac_xu_ly_khac".
+(h) TIỀN ÁN, TIỀN SỰ, NHÂN THÂN, BIỆN PHÁP NGĂN CHẶN: chép đúng JSON. Không
+    đổi các lần xử phạt hành chính / bản án ở "nhan_than" thành tiền án hoặc
+    tiền sự. Trường nào JSON ghi "Không" hoặc không có dữ liệu thì ghi "Không"
+    — TUYỆT ĐỐI không viết [THIẾU DỮ LIỆU] cho bốn trường này. Nếu "nhan_than"
+    có nội dung thì liệt kê ĐẦY ĐỦ từng mục, không nhận xét là thiếu dữ liệu.
+(i) DIỄN BIẾN VỤ ÁN (ngay sau dòng "Trên cơ sở kết quả điều tra đã xác định
+    được như sau:"): KHÔNG tự viết lại. Chỉ ghi ĐÚNG MỘT dòng duy nhất
+    [[DIEN_BIEN_VU_AN]] — hệ thống sẽ tự chèn nguyên văn toàn bộ diễn biến
+    vụ án vào vị trí này. Sau dòng đó mới viết tiếp:
+    - "Phân tích, đánh giá tình tiết tăng nặng, giảm nhẹ và tình tiết khác có
+      ý nghĩa đối với vụ án" (xem điểm (c));
+    - "Việc thu giữ, tạm giữ tài liệu, đồ vật; xử lý vật chứng" ("vat_chung_tai_lieu");
+    - "Phần dân sự" ("phan_dan_su");
+    - nếu có đối tượng/hành vi hồ sơ xử lý khác (không truy tố, xử phạt hành
+      chính, nhắc nhở) thì nêu kèm căn cứ ("hanh_vi_khong_truy_to_hoac_xu_ly_khac").
+(i2) MỤC KẾT LUẬN — đoạn "Tổng hợp hành vi phạm tội": viết MỘT đoạn TÓM TẮT
+    ĐẦY ĐỦ NHƯNG NGẮN GỌN, DỄ HIỂU từ phần diễn biến vụ án ("dien_bien_vu_an_nguyen_van"):
+    ai, khi nào, ở đâu, làm gì (kèm hung khí/phương tiện), hậu quả, tội danh
+    của từng bị can. Không sao chép lại nguyên văn diễn biến, không quá ~8 câu.
 (j) TÒA ÁN trong QUYẾT ĐỊNH: ghi tên Tòa án ở "toa_an_co_tham_quyen" nếu có; chỉ
     khi đó trống mới ghi [THIẾU DỮ LIỆU: tên Tòa án có thẩm quyền].
 
@@ -482,12 +494,15 @@ số 1), sắp xếp theo vai trò từ cao xuống thấp. Dùng đúng cấu t
 - Quốc tịch: [giá trị] - Dân tộc: [giá trị] - Tôn giáo: [giá trị]
 - Nghề nghiệp: [giá trị] - Trình độ học vấn: [giá trị]
 - Họ tên cha, mẹ, vợ/chồng, con: [giá trị]
-- Tiền án, tiền sự: [giá trị]
-- Nhân thân: [liệt kê đầy đủ từng mục trong "nhan_than"; bỏ dòng này nếu JSON không có nhân thân]
-- Biện pháp ngăn chặn, biện pháp cưỡng chế đang áp dụng: [giá trị]
-Điền giá trị lấy từ JSON. Trường nào JSON không có thì ghi [THIẾU DỮ LIỆU],
-nhưng nếu nhiều trường liền nhau cùng thiếu thì gộp thành MỘT dấu
-[THIẾU DỮ LIỆU: ...] duy nhất cho cả dòng. Chỉ có năm sinh thì ghi đúng năm sinh.
+- Tiền án: [giá trị] - Tiền sự: [giá trị]
+- Nhân thân: [liệt kê đầy đủ từng mục trong "nhan_than"; không có thì ghi Không]
+- Biện pháp ngăn chặn, biện pháp cưỡng chế đang áp dụng: [giá trị; không có thì ghi Không]
+Điền giá trị lấy từ JSON. Với các trường thông tin cá nhân khác mà JSON không
+có thì ghi [THIẾU DỮ LIỆU] (gộp thành MỘT dấu nếu nhiều trường liền nhau cùng
+thiếu). Chỉ có năm sinh thì ghi đúng năm sinh.
+
+HỒ SƠ KÈM THEO: luôn ghi đúng dòng "- Hồ sơ vụ án gồm: … tập, bằng … tờ; đánh
+số thứ tự từ 01 đến hết." để Kiểm sát viên điền tay, không ghi [THIẾU DỮ LIỆU].
 
 Hai tiêu đề KẾT LUẬN và QUYẾT ĐỊNH phải nằm RIÊNG MỘT DÒNG, chỉ gồm đúng chữ
 "KẾT LUẬN" / "QUYẾT ĐỊNH" (không thêm chú thích, ngoặc đơn hay ký hiệu).
@@ -564,8 +579,11 @@ THẢO dưới đây, đối chiếu với DỮ KIỆN GỐC (JSON), và thực 
      một dòng, không kèm chú thích.
    - Xóa mọi nhãn vai trò (chủ mưu, cầm đầu, đồng phạm tích cực, giúp sức…)
      nếu dữ kiện gốc không ghi vai trò đó.
-   - Nếu bản thảo ghi một người có "tiền án/tiền sự" hoặc "Tiền án: Không" mà
-     dữ kiện gốc để trống hoặc chỉ có ở mục nhân thân thì sửa lại theo dữ kiện gốc.
+   - Giữ NGUYÊN dòng [[DIEN_BIEN_VU_AN]] (hệ thống sẽ thay bằng diễn biến vụ án
+     đầy đủ), không viết lại hay xóa dòng này.
+   - Nhân thân, tiền án, tiền sự, biện pháp ngăn chặn không có dữ liệu thì ghi
+     "Không", không ghi [THIẾU DỮ LIỆU]. Không biến nhân thân thành tiền án/tiền sự.
+   - Dòng "Hồ sơ vụ án gồm" giữ dạng "… tập, bằng … tờ", không ghi [THIẾU DỮ LIỆU].
    - Thứ tự các bị can phải giống nhau ở lý lịch, khẳng định và quyết định truy tố.
    - Nếu phần diễn biến chỉ là một đoạn chung mà dữ kiện gốc có hành vi riêng của
      từng bị can, giá trị thiệt hại, tỷ lệ thương tích thì bổ sung đầy đủ.

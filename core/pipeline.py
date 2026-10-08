@@ -16,7 +16,12 @@ import unicodedata
 from . import model_clients as mc
 from . import prompts as pr
 from . import law_lookup
-from .config import MAX_TOKENS_LONG
+from .config import GEMINI_STEP_MODELS, MAX_TOKENS_LONG
+
+
+def _step_kwargs(step: str, provider: str) -> dict:
+    model = GEMINI_STEP_MODELS.get(step) if provider == "gemini" else None
+    return {"model": model} if model else {}
 
 
 _INTERNAL_CHECK_MARKER = "--- PHỤ LỤC KIỂM TRA NỘI BỘ"
@@ -101,7 +106,8 @@ def _preserve_ai_suggestions(document: str, draft: str) -> str:
 
 def classify_case(input_text: str, provider: str = "gemini") -> str:
     raw = mc.call_model(
-        provider, pr.SYSTEM_BASE, pr.CLASSIFY_PROMPT.format(input_text=input_text)
+        provider, pr.SYSTEM_BASE, pr.CLASSIFY_PROMPT.format(input_text=input_text),
+        **_step_kwargs("classify", provider),
     )
     raw_upper = raw.strip().upper()
     if "HINH_SU" in raw_upper or "HÌNH SỰ" in raw_upper:
@@ -126,7 +132,7 @@ def extract_facts(input_text: str, case_type: str, provider: str = "gemini") -> 
     template = pr.EXTRACT_PROMPT_HS if case_type == "HINH_SU" else pr.EXTRACT_PROMPT_DS
     raw = mc.call_model(
         provider, pr.SYSTEM_BASE, template.format(input_text=input_text),
-        max_tokens=MAX_TOKENS_LONG,
+        max_tokens=MAX_TOKENS_LONG, **_step_kwargs("extract", provider),
     )
     return _clean_json_text(raw)
 
@@ -138,31 +144,106 @@ def _fold(text: str) -> str:
     return re.sub(r"\s+", " ", stripped.replace("đ", "d").replace("Đ", "D")).strip().lower()
 
 
-def fix_blank_criminal_record(facts_json: str, input_text: str) -> str:
-    """Nếu mục 'Tiền án, tiền sự' của một bị can TRỐNG trong hồ sơ gốc thì ép
-    tien_an/tien_su = THIẾU DỮ LIỆU. Mô hình hay tự điền 'Không' (hoặc biến
-    các lần xử phạt ở mục Nhân thân thành tiền sự) — đây là đánh giá pháp lý
-    của Kiểm sát viên, không được tự suy ra."""
+_NARRATIVE_PLACEHOLDER = "[[DIEN_BIEN_VU_AN]]"
+_HO_SO_LINE = "- Hồ sơ vụ án gồm: … tập, bằng … tờ; đánh số thứ tự từ 01 đến hết."
+
+# Các mục có thể là tiêu đề của phần KHÁC trong đề thi — dùng để cắt phần diễn biến.
+_NARRATIVE_START = re.compile(
+    r"(?im)^\W*(?:\d+\.\s*)?(?:Diễn\s*biến(?:\s*(?:của\s*)?(?:vụ\s*án|hành\s*vi[^\n:]*))?|Nội\s*dung\s*vụ\s*án|Tình\s*huống)\s*:?[^\n]*\n"
+)
+_NARRATIVE_END = re.compile(
+    r"(?im)^\W*(?:\d+\.\s*)?(?:Tình\s*tiết\s*(?:tăng|giảm)|Phân\s*tích|Vật\s*chứng|Việc\s*thu\s*giữ|"
+    r"Phần\s*dân\s*sự|Trách\s*nhiệm\s*dân\s*sự|Kết\s*luận(?!\s*giám)|Lý\s*lịch|Nhân\s*thân|"
+    r"Bị\s*can\s*:|Họ\s*tên\s*:|Căn\s*cứ\s*(?:vào|các))"
+)
+
+
+def extract_case_narrative(input_text: str) -> str:
+    """Lấy NGUYÊN VĂN phần diễn biến vụ án từ đề thi bằng quy tắc (không qua
+    mô hình) để không bị mô hình nhỏ rút gọn. Trả '' nếu không nhận ra mục."""
+    start = _NARRATIVE_START.search(input_text or "")
+    if not start:
+        return ""
+    rest = input_text[start.end():]
+    end = _NARRATIVE_END.search(rest)
+    narrative = (rest[: end.start()] if end else rest).strip()
+    return narrative if len(narrative) >= 200 else ""
+
+
+def apply_default_values(facts_json: str, input_text: str = "") -> str:
+    """Điền giá trị mặc định theo quy ước của Viện kiểm sát:
+    - nhân thân / tiền án / tiền sự / biện pháp ngăn chặn không có dữ liệu → "Không";
+    - hồ sơ không nêu số tập, số tờ → để "…" cho Kiểm sát viên điền tay;
+    - diễn biến vụ án: ưu tiên bản chép nguyên văn bằng quy tắc từ đề thi,
+      nếu không nhận ra thì dùng bản mô hình trích xuất, cuối cùng ghép từ hành vi từng bị can.
+    Nhân thân (bản án, xử phạt hành chính) KHÔNG bị đổi thành tiền án/tiền sự."""
     try:
         facts = json.loads(facts_json)
-        suspects = facts.get("bi_can") or []
-    except (json.JSONDecodeError, AttributeError):
+        if not isinstance(facts, dict):
+            return facts_json
+    except json.JSONDecodeError:
         return facts_json
 
-    headings = list(re.finditer(r"(?im)^\s*\d+\.\s*Họ\s*tên\s*:\s*(.+?)\s*(?:Giới\s*tính|$)", input_text))
-    changed = False
-    for index, heading in enumerate(headings):
-        name = _fold(heading.group(1))
-        end = headings[index + 1].start() if index + 1 < len(headings) else len(input_text)
-        block = input_text[heading.end():end]
-        record = re.search(r"Tiền\s*án,\s*tiền\s*sự\s*:?([^\n]*)\n", block, flags=re.IGNORECASE)
-        if not record or record.group(1).strip(" .:;-"):
+    for suspect in facts.get("bi_can") or []:
+        if not isinstance(suspect, dict):
             continue
-        for suspect in suspects:
-            if _fold(suspect.get("ho_ten", "")) == name:
-                suspect["tien_an"] = suspect["tien_su"] = "THIẾU DỮ LIỆU"
-                changed = True
-    return json.dumps(facts, ensure_ascii=False, indent=2) if changed else facts_json
+        for key in ("nhan_than", "tien_an", "tien_su", "bien_phap_ngan_chan"):
+            value = suspect.get(key)
+            if isinstance(value, (list, dict)):
+                value = json.dumps(value, ensure_ascii=False)
+            if not _is_filled(value):
+                suspect[key] = "Không"
+
+    ho_so = facts.get("ho_so") if isinstance(facts.get("ho_so"), dict) else {}
+    for key in ("so_tap", "so_to"):
+        if not _is_filled(ho_so.get(key)):
+            ho_so[key] = "…"
+    facts["ho_so"] = ho_so
+
+    narrative = extract_case_narrative(input_text)
+    if not narrative:
+        narrative = str(facts.get("dien_bien_vu_an_nguyen_van") or "").strip()
+    if not _is_filled(narrative):
+        parts = [str(facts.get("hanh_vi_pham_toi_tom_tat") or "")]
+        for item in facts.get("hanh_vi_tung_bi_can") or []:
+            if isinstance(item, dict):
+                parts.append(f"{item.get('bi_can', '')}: {item.get('hanh_vi_cu_the', '')}")
+        narrative = "\n".join(x for x in parts if _is_filled(x))
+    facts["dien_bien_vu_an_nguyen_van"] = narrative
+    return json.dumps(facts, ensure_ascii=False, indent=2)
+
+
+def insert_narrative(document: str, facts_json: str) -> str:
+    """Thay dấu [[DIEN_BIEN_VU_AN]] bằng diễn biến vụ án đầy đủ. Nếu mô hình
+    làm mất dấu thì chèn ngay sau dòng 'Trên cơ sở kết quả điều tra...'."""
+    try:
+        narrative = str(json.loads(facts_json).get("dien_bien_vu_an_nguyen_van") or "").strip()
+    except (json.JSONDecodeError, AttributeError):
+        narrative = ""
+    if not narrative:
+        return document.replace(_NARRATIVE_PLACEHOLDER, "").strip()
+    narrative = "\n".join(line.strip() for line in narrative.splitlines() if line.strip())
+    if _NARRATIVE_PLACEHOLDER in document:
+        return document.replace(_NARRATIVE_PLACEHOLDER, narrative)
+    lead = re.search(r"(?im)^.*Trên cơ sở kết quả điều tra[^\n]*\n?", document)
+    if lead:
+        return f"{document[:lead.end()].rstrip()}\n{narrative}\n{document[lead.end():].lstrip()}"
+    return document
+
+
+_MISSING_TAG = r"\[THIẾU DỮ LIỆU[^\]]*\]"
+
+
+def apply_default_text_rules(document: str) -> str:
+    """Lưới an toàn sau cùng, không phụ thuộc mô hình có tuân thủ prompt hay không."""
+    document = re.sub(
+        rf"(?im)^(\s*-?\s*(?:Nhân thân|Tiền án, tiền sự|Biện pháp ngăn chặn[^:\n]*)\s*:\s*){_MISSING_TAG}\s*$",
+        r"\1Không", document,
+    )
+    document = re.sub(rf"(?i)(Tiền án\s*:\s*){_MISSING_TAG}", r"\1Không", document)
+    document = re.sub(rf"(?i)(Tiền sự\s*:\s*){_MISSING_TAG}", r"\1Không", document)
+    document = re.sub(r"(?im)^\s*-?\s*Hồ sơ vụ án gồm[^\n]*$", _HO_SO_LINE, document)
+    return document
 
 
 _BODY_END_PATTERN = re.compile(
@@ -319,7 +400,10 @@ def draft_document(facts_json: str, dieu_luat_lien_quan: str, case_type: str, pr
         mau_tham_chieu=mau,
         dieu_luat_lien_quan=dieu_luat_lien_quan,
     )
-    return mc.call_model(provider, pr.SYSTEM_BASE, prompt, max_tokens=MAX_TOKENS_LONG)
+    return mc.call_model(
+        provider, pr.SYSTEM_BASE, prompt, max_tokens=MAX_TOKENS_LONG,
+        **_step_kwargs("draft", provider),
+    )
 
 
 def self_check(
@@ -335,11 +419,17 @@ def self_check(
         case_type=case_type,
         dieu_luat_lien_quan=dieu_luat_lien_quan,
     )
-    checked_text = mc.call_model(provider, pr.SYSTEM_BASE, prompt, max_tokens=MAX_TOKENS_LONG)
+    checked_text = mc.call_model(
+        provider, pr.SYSTEM_BASE, prompt, max_tokens=MAX_TOKENS_LONG,
+        **_step_kwargs("self_check", provider),
+    )
     document, appendix = split_internal_check(checked_text)
     document = _normalize_legal_terms(document)
     document = _preserve_ai_suggestions(document, draft_text)
-    document = trim_to_body(document) if case_type == "HINH_SU" else document
+    if case_type == "HINH_SU":
+        document = trim_to_body(document)
+        document = insert_narrative(document, facts_json)
+        document = apply_default_text_rules(document)
     return document, appendix
 
 
@@ -369,7 +459,7 @@ def run_pipeline(
 
     facts = extract_facts(input_text, case_type, provider)
     if case_type == "HINH_SU":
-        facts = fix_blank_criminal_record(facts, input_text)
+        facts = apply_default_values(facts, input_text)
     notify("extract", facts)
 
     is_hc = case_type == "DAN_SU_HANH_CHINH" and _is_hanh_chinh(facts)

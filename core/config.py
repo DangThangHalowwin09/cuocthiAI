@@ -42,3 +42,19 @@ MAX_TOKENS_DEFAULT = 4000
 # Các bước trích xuất / soạn thảo / tự kiểm tra sinh văn bản dài (JSON lý lịch
 # nhiều bị can, cả bản cáo trạng) — 4000 token sẽ làm văn bản bị cắt giữa chừng.
 MAX_TOKENS_LONG = 16000
+
+
+# Mô hình theo từng bước (chỉ áp dụng cho Gemini). Phân loại là việc dễ nên
+# dùng bản lite cho rẻ/nhanh; trích xuất, soạn thảo và tự kiểm tra phải bám
+# sát nhiều quy tắc cùng lúc trên văn bản dài — bản lite hay bỏ sót/rút gọn,
+# nên dùng bản flash đầy đủ. Đặt cả hai bằng nhau nếu muốn dùng một model.
+GEMINI_STEP_MODELS = {
+    "classify": "gemini-3.5-flash-lite",
+    "extract": "gemini-3.5-flash",
+    "draft": "gemini-3.5-flash",
+    "self_check": "gemini-3.5-flash",
+}
+
+# Model dự phòng: khi model chính báo quá tải (503/429), hết quota hoặc bị gỡ
+# (404), hệ thống tự gọi lại bằng model này để không gián đoạn buổi thi.
+GEMINI_BACKUP_MODEL = "gemini-3.5-flash-lite"

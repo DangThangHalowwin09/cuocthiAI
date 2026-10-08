@@ -188,6 +188,29 @@ def _set_recipients(doc: Document):
         _add_run(paragraph, line, size=12 if index == 0 else 11, bold=index == 0)
 
 
+def _set_signature(doc: Document):
+    """Chữ ký mặc định: KT. VIỆN TRƯỞNG / PHÓ VIỆN TRƯỞNG / Nguyễn Văn A
+    (Kiểm sát viên thay bằng tên người ký thật)."""
+    if len(doc.tables) < 2:
+        return
+    cell = doc.tables[-1].cell(0, 1)
+    cell.text = ""
+    lines = [
+        ("KT. VIỆN TRƯỞNG", 13, True, False),
+        ("PHÓ VIỆN TRƯỞNG", 13, True, False),
+        ("(Ký, ghi rõ họ tên, đóng dấu)", 12, False, True),
+        ("", 12, False, False),
+        ("", 12, False, False),
+        ("Nguyễn Văn A", 13, True, False),
+    ]
+    for index, (text, size, bold, italic) in enumerate(lines):
+        paragraph = cell.paragraphs[0] if index == 0 else cell.add_paragraph()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        _set_single_spacing(paragraph)
+        if text:
+            _add_run(paragraph, text, size=size, bold=bold, italic=italic)
+
+
 def _remove_template_notes(output_path: str):
     """Xóa footnote/endnote và reference của phần hướng dẫn trong template."""
     main_ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -433,6 +456,7 @@ def _write_from_template(
 
     _apply_header(doc, header)
     _set_recipients(doc)
+    _set_signature(doc)
     _append_appendix_after_document(doc, appendix or "")
 
     doc.save(output_path)
