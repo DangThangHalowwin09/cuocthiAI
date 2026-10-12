@@ -7,6 +7,7 @@ Xuất văn bản kết quả (Cáo trạng / Phát biểu của Kiểm sát vi�
 import copy
 import os
 import re
+import unicodedata
 import zipfile
 from pathlib import Path
 from lxml import etree as ElementTree  # lxml giữ nguyên tiền tố namespace (ElementTree chuẩn làm Word báo file hỏng)
@@ -18,6 +19,7 @@ from docx.text.paragraph import Paragraph
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
+from .phat_bieu import split_phat_bieu_text
 from .pipeline import split_internal_check
 
 FONT_NAME = "Times New Roman"
@@ -561,22 +563,25 @@ def _add_phat_bieu_line_to(paragraph: Paragraph, line: str, header: dict):
     _add_run(paragraph, line, size=14, italic=italic_all)
 
 
-PHAT_BIEU_TEMPLATE_PATH = (
-    Path(__file__).resolve().parents[1] / "data" / "templates" / "36-Phat-bieu.docx"
-)
-_BODY_MARKER = "{{NOI_DUNG_PHAT_BIEU}}"
+TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "data" / "templates"
+# Mẫu chính thức (QĐ 195/QĐ-VKSTC ngày 30/6/2026) do đội thi đặt trong data/templates:
+#   "Mẫu số 36 ... .docx"  → dân sự, HNGĐ, KDTM, lao động
+#   "Mẫu số 35 ... .docx"  → hành chính
+_TEMPLATE_NAME = {"DS": re.compile(r"^Mẫu số\s*36"), "HC": re.compile(r"^Mẫu số\s*35")}
+_TEMPLATE_ENV = {"DS": "PHAT_BIEU_DS_TEMPLATE_PATH", "HC": "PHAT_BIEU_HC_TEMPLATE_PATH"}
 
-# Token trong template → khóa trong header (xem phat_bieu.build_phat_bieu / pipeline.build_ds_header)
-_TEMPLATE_TOKENS = {
-    "{{DON_VI_CAP_TREN}}": "unit_parent",
-    "{{DON_VI_BAN_HANH}}": "unit_name",
-    "{{SO_KY_HIEU}}": "so_ky_hieu",
-    "{{DIA_DANH}}": "dia_danh",
-    "{{NAM}}": "nam",
-    "{{LOAI_PHIEN_TOA}}": "loai_phien_toa",
-    "{{TEN_VU_AN}}": "ten_vu_an",
-    "{{KIEM_SAT_VIEN}}": "ksv",
-}
+
+def find_phat_bieu_template(hanh_chinh: bool) -> Path | None:
+    key = "HC" if hanh_chinh else "DS"
+    env_path = os.environ.get(_TEMPLATE_ENV[key])
+    if env_path and Path(env_path).is_file():
+        return Path(env_path)
+    if not TEMPLATE_DIR.is_dir():
+        return None
+    for file in sorted(TEMPLATE_DIR.glob("*.docx")):
+        if _TEMPLATE_NAME[key].match(unicodedata.normalize("NFC", file.name)):
+            return file
+    return None
 
 
 def _phat_bieu_values(header: dict) -> dict:
@@ -598,7 +603,7 @@ def _phat_bieu_values(header: dict) -> dict:
 
 
 def _compose_phat_bieu(doc: Document, values: dict, body_lines: list[str], header: dict):
-    """Dựng bố cục PHÁT BIỂU (đầu trang 2 cột, tiêu đề 3 dòng, nội dung, nơi nhận + KSV)."""
+    """Dựng PHÁT BIỂU từ đầu (chỉ dùng khi không có/không đọc được template chính thức)."""
     _set_margins(doc)
     normal = doc.styles["Normal"]
     normal.font.name = FONT_NAME
@@ -618,12 +623,12 @@ def _compose_phat_bieu(doc: Document, values: dict, body_lines: list[str], heade
     doc.add_paragraph()
 
     for line in body_lines:
-        _add_phat_bieu_line(doc, line, header)
+        if line.strip():
+            _add_phat_bieu_line(doc, line.strip(), header)
 
     doc.add_paragraph()
     footer = doc.add_table(rows=1, cols=2)
     footer.autofit = True
-    # Không để khối Nơi nhận / Kiểm sát viên bị tách qua hai trang.
     footer.rows[0]._tr.get_or_add_trPr().append(OxmlElement("w:cantSplit"))
     for paragraph in doc.paragraphs[-2:]:
         paragraph.paragraph_format.keep_with_next = True
@@ -650,25 +655,208 @@ def _compose_phat_bieu(doc: Document, values: dict, body_lines: list[str], heade
     _add_run(name, values["ksv"], size=14, bold=values["ksv"] != "(Ký, ghi rõ họ tên)")
 
 
-def ensure_phat_bieu_template(path: Path = PHAT_BIEU_TEMPLATE_PATH) -> Path:
-    """Tạo template Phát biểu (Mẫu 36/DS - 35/HC) nếu chưa có. Template là file .docx
-    thường: có thể mở bằng Word để chỉnh font, lề, tiêu đề; các {{TOKEN}} và
-    {{NOI_DUNG_PHAT_BIEU}} sẽ được hệ thống thay khi xuất kết quả."""
-    if path.is_file():
-        return path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tokens = {key: token for token, key in _TEMPLATE_TOKENS.items()}
-    doc = Document()
-    _compose_phat_bieu(doc, tokens, [_BODY_MARKER], {})
-    doc.save(str(path))
-    return path
+_PLACEHOLDER_LINE = re.compile(r"^[….\s]*\(\d+\)[….\s]*$")
 
 
-def _replace_in_paragraph(paragraph: Paragraph, mapping: dict):
-    for run in paragraph.runs:
-        for token, value in mapping.items():
-            if token in run.text:
-                run.text = run.text.replace(token, value)
+def _set_paragraph_content(paragraph: Paragraph, text: str):
+    """Ghi đè nội dung đoạn nhưng giữ định dạng của run có chữ đầu tiên; bỏ tô sáng/đỏ của ô điền."""
+    runs = paragraph.runs
+    target = next((r for r in runs if r.text.strip()), runs[0] if runs else None)
+    if target is None:
+        paragraph.add_run(text)
+        return
+    for run in runs:
+        if run is not target:
+            run._r.getparent().remove(run._r)
+    target.text = text
+    properties = target._r.rPr
+    if properties is not None:
+        for tag in ("w:highlight", "w:shd"):
+            for element in properties.findall(qn(tag)):
+                properties.remove(element)
+        for element in properties.findall(qn("w:color")):
+            if (element.get(qn("w:val")) or "").upper() == "FF0000":
+                properties.remove(element)
+
+
+def _phat_bieu_rules(header: dict) -> list[tuple[re.Pattern, str]]:
+    court = header.get("toa_an_tail") or "…"
+    vks = header.get("vks_tail") or "…"
+    loai = header.get("loai") or "dân sự"
+    case = header.get("ten_vu_an") or "…"
+    ma = header.get("ma_loai") or "DS"
+    dieu_ds, dieu_hc = "262", "190"
+    year = str(header.get("nam") or "")
+    year = year if year.isdigit() else "20…"
+    return [
+        (re.compile(r"58,\s*…\(5\)…\s*"), f"58, {dieu_ds} "),
+        (re.compile(r"43,\s*…\(3\)…\s*"), f"43, {dieu_hc} "),
+        (re.compile(r"Tòa án nhân dân…\(\d+\)…\s*"), f"Tòa án nhân dân {court} "),
+        (re.compile(r"Viện kiểm sát nhân dân…\(2\)…\.*\s*"), f"Viện kiểm sát nhân dân {vks} "),
+        (re.compile(r"\s*\(phiên họp\)(\s*sơ thẩm)…\(4\)…"), r"\1"),
+        (re.compile(r"(phiên tòa)\s*\(phiên họp\)"), r"\1"),
+        (re.compile(r"\(việc\)…\(7\)…"), loai + " "),
+        (re.compile(r"\(VIỆC\)…\(7\)…"), loai.upper()),
+        (re.compile(r"\(việc\)\.\.\.\(7\)\.\.\.\s*"), f"{case} "),
+        (re.compile(r"về…\([58]\)…"), f"về “{case}”"),
+        (re.compile(r"Số:\s*…\.+"), "Số:      "),
+        (re.compile(r"PB-VKS-…\(3\)…"), f"PB-VKS-{ma}"),
+        (re.compile(r"VIỆN KIỂM SÁT NHÂN DÂN\(1\)\.+"), header.get("unit_parent") or "VIỆN KIỂM SÁT NHÂN DÂN TỐI CAO"),
+        (re.compile(r"VIỆN KIỂM SÁT NHÂN DÂN\(2\)\.+"), header.get("unit_name") or "VIỆN KIỂM SÁT NHÂN DÂN …"),
+        (re.compile(r"…+,\s*ngày"), f"{header.get('dia_danh') or '…'}, ngày"),
+        (re.compile(r"năm 20…"), f"năm {year}"),
+    ]
+
+
+def _remove_element(element):
+    parent = element.getparent()
+    if parent is not None:
+        parent.remove(element)
+
+
+def _fix_header_table(table, widths=(3950, 5700)):
+    """Bảng đầu trang gồm 2 cột cố định (tên cơ quan | quốc hiệu). Mẫu 36 có lưới 3 cột để
+    chứa khung 'Mẫu số' — sau khi bỏ khung, Word chia lại cột và làm quốc hiệu xuống dòng."""
+    tbl = table._tbl
+    grid = tbl.tblGrid
+    for column in list(grid):
+        grid.remove(column)
+    for width in widths:
+        column = OxmlElement("w:gridCol")
+        column.set(qn("w:w"), str(width))
+        grid.append(column)
+    for cell_element, width in zip(table.rows[0]._tr.iterchildren(qn("w:tc")), widths):
+        properties = cell_element.get_or_add_tcPr()
+        for span in properties.findall(qn("w:gridSpan")):
+            properties.remove(span)
+        cell_width = properties.find(qn("w:tcW"))
+        if cell_width is None:
+            cell_width = OxmlElement("w:tcW")
+            properties.insert(0, cell_width)
+        cell_width.set(qn("w:w"), str(width))
+        cell_width.set(qn("w:type"), "dxa")
+    table_width = tbl.tblPr.find(qn("w:tblW"))
+    if table_width is not None:
+        table_width.set(qn("w:w"), str(sum(widths)))
+        table_width.set(qn("w:type"), "dxa")
+    layout = OxmlElement("w:tblLayout")
+    layout.set(qn("w:type"), "fixed")
+    tbl.tblPr.append(layout)
+    margins = OxmlElement("w:tblCellMar")  # lề ô hẹp để quốc hiệu vừa một dòng
+    for side in ("left", "right"):
+        margin = OxmlElement(f"w:{side}")
+        margin.set(qn("w:w"), "60")
+        margin.set(qn("w:type"), "dxa")
+        margins.append(margin)
+    tbl.tblPr.append(margins)
+
+
+def _fill_official_template(template: Path, parts: dict, output_path: str, header: dict):
+    doc = Document(str(template))
+    body = doc.element.body
+
+    # 1) Bỏ khung "Mẫu số .../Theo QĐ ..." (chỉ để nhận diện mẫu, không thuộc văn bản).
+    for table in list(doc.tables):
+        for row in list(table.rows):
+            if "Mẫu số" in row.cells[0].text:
+                if len(table.rows) == 1:
+                    _remove_element(table._tbl)
+                else:
+                    _remove_element(row._tr)
+                break
+
+    # 2) Bỏ phần "Hướng dẫn sử dụng" (mọi thứ sau bảng cuối, trừ sectPr).
+    tables = list(body.iterchildren(qn("w:tbl")))
+    if tables:
+        after = False
+        for child in list(body):
+            if child is tables[-1]:
+                after = True
+                continue
+            if after and child.tag != qn("w:sectPr"):
+                _remove_element(child)
+
+    for table in doc.tables:
+        if "CỘNG HÒA" in "".join(c.text for c in table.rows[0].cells):
+            _fix_header_table(table)
+
+    # 3) Thay các ô "…(n)…" ngắn trong đoạn văn và bảng đầu trang.
+    rules = _phat_bieu_rules(header)
+    for paragraph in _iter_paragraphs(doc):
+        text = paragraph.text
+        if not text.strip() or _PLACEHOLDER_LINE.match(text):
+            continue
+        new_text = text
+        for pattern, replacement in rules:
+            new_text = pattern.sub(replacement, new_text)
+        if new_text != text:
+            in_header_table = new_text.lstrip().startswith(("Số:", header.get("dia_danh") or "…"))
+            _set_paragraph_content(paragraph, new_text.strip() if in_header_table else new_text)
+            if in_header_table and "ngày" in new_text or new_text.lstrip().startswith("Số:"):
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # 4) Tiêu đề: căn giữa, thêm dòng "giải quyết vụ án ...".
+    case = header.get("ten_vu_an") or ""
+    for paragraph in doc.paragraphs:
+        stripped = paragraph.text.strip()
+        if stripped == "PHÁT BIỂU":
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            _set_paragraph_content(paragraph, "PHÁT BIỂU")
+        elif stripped.startswith("Của Kiểm sát viên tại phiên tòa"):
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            _set_paragraph_content(paragraph, stripped)
+            if case:
+                clone = copy.deepcopy(paragraph._p)
+                paragraph._p.addnext(clone)
+                _set_paragraph_content(Paragraph(clone, paragraph._parent), f"giải quyết vụ án {case}")
+            break
+
+    # 5) Điền các mục nội dung vào đúng ô (1)…(n) theo thứ tự trong mẫu.
+    placeholders = [p for p in doc.paragraphs if _PLACEHOLDER_LINE.match(p.text)]
+    contents = [
+        parts["parties"], parts["sec1"], parts["sec2"], parts["sec3"],
+        parts["giai_quyet"], parts["kien_nghi"],
+    ]
+    if len(placeholders) != len(contents):
+        raise ValueError(f"Template có {len(placeholders)} ô nội dung, cần {len(contents)}")
+    last_inserted = None
+    for placeholder, lines in zip(placeholders, contents):
+        if not lines:
+            heading = placeholder._p.getprevious()
+            if heading is not None and heading.tag == qn("w:p") and Paragraph(heading, placeholder._parent).text.strip().startswith("III."):
+                _remove_element(heading)
+            _remove_element(placeholder._p)
+            continue
+        previous = placeholder
+        for line in lines:
+            created = doc.add_paragraph()
+            _add_phat_bieu_line_to(created, line, header)
+            previous = _move_after(previous, created)
+        last_inserted = previous
+        _remove_element(placeholder._p)
+
+    # 6) Chữ ký: điền tên Kiểm sát viên (nếu biết).
+    ksv = header.get("ksv") or ""
+    if ksv and doc.tables:
+        cell = doc.tables[-1].rows[0].cells[-1]
+        for paragraph in cell.paragraphs:
+            if "Ký tên" in paragraph.text:
+                _set_paragraph_content(paragraph, "")
+        target = cell.paragraphs[-1]
+        target.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        for run in list(target.runs):
+            run._r.getparent().remove(run._r)
+        _add_run(target, ksv, size=14, bold=True)
+
+    # 7) Số trang đầu trang (mẫu chưa có).
+    header_paragraph = doc.sections[0].header.paragraphs[0] if doc.sections else None
+    if header_paragraph is not None and not header_paragraph.text.strip() and not header_paragraph.runs:
+        _add_page_number(doc)
+    tail = doc.add_paragraph()
+    tail.paragraph_format.space_after = Pt(0)
+    tail.paragraph_format.line_spacing = Pt(1)
+    _add_run(tail, "", size=1)
+    doc.save(output_path)
 
 
 def _move_after(previous: Paragraph, paragraph: Paragraph) -> Paragraph:
@@ -676,50 +864,22 @@ def _move_after(previous: Paragraph, paragraph: Paragraph) -> Paragraph:
     return paragraph
 
 
-def _fill_phat_bieu_template(template_path: Path, final_text: str, output_path: str, header: dict):
-    doc = Document(str(template_path))
-    values = _phat_bieu_values(header)
-    mapping = {token: values[key] for token, key in _TEMPLATE_TOKENS.items()}
-
-    containers = [doc]
-    containers += [section.header for section in doc.sections]
-    for container in containers:
-        for paragraph in container.paragraphs:
-            _replace_in_paragraph(paragraph, mapping)
-    for paragraph in _iter_paragraphs(doc):
-        _replace_in_paragraph(paragraph, mapping)
-
-    marker = next((p for p in doc.paragraphs if _BODY_MARKER in p.text), None)
-    if marker is None:
-        raise ValueError(f"Template Phát biểu thiếu vùng nội dung: {_BODY_MARKER}")
-    previous = marker
-    for raw_line in final_text.splitlines():
-        line = raw_line.strip()
-        if line:
-            created = doc.add_paragraph()
-            _add_phat_bieu_line_to(created, line, header)
-            previous = _move_after(previous, created)
-    _remove_paragraph(marker)
-    # Giữ đoạn kết + dòng trống đi cùng khối Nơi nhận / Kiểm sát viên (không tách trang).
-    paragraphs = doc.paragraphs
-    for index, paragraph in enumerate(paragraphs):
-        if paragraph._p is previous._p:
-            for keep in paragraphs[index:index + 2]:
-                keep.paragraph_format.keep_with_next = True
-            break
-    doc.save(output_path)
-
-
 def write_phat_bieu_docx(final_text: str, output_path: str, header: dict | None = None) -> str:
-    """Xuất PHÁT BIỂU của Kiểm sát viên (dân sự/hành chính) từ template trong
-    data/templates (hoặc biến môi trường PHAT_BIEU_TEMPLATE_PATH)."""
+    """Xuất PHÁT BIỂU của Kiểm sát viên bằng template chính thức: Mẫu 36/DS (dân sự, HNGĐ,
+    KDTM, lao động) hoặc Mẫu 35/HC (hành chính) trong data/templates."""
     header = header or {}
     document_text, appendix = split_internal_check(final_text)
-    template = Path(os.environ.get("PHAT_BIEU_TEMPLATE_PATH") or PHAT_BIEU_TEMPLATE_PATH)
-    try:
-        _fill_phat_bieu_template(ensure_phat_bieu_template(template), document_text, output_path, header)
-    except ValueError:
-        # Template do người dùng tự thay không có vùng nội dung → dựng từ đầu theo bố cục mẫu.
+    template = find_phat_bieu_template(bool(header.get("hanh_chinh")))
+    parts = split_phat_bieu_text(document_text) if template else None
+    done = False
+    if template and parts:
+        try:
+            _fill_official_template(template, parts, output_path, header)
+            done = True
+        except ValueError:
+            done = False
+    if not done:
+        # Không có template, hoặc văn bản/template không khớp cấu trúc → dựng từ đầu theo bố cục mẫu.
         doc = Document()
         _compose_phat_bieu(doc, _phat_bieu_values(header), document_text.splitlines(), header)
         doc.save(output_path)

@@ -13,19 +13,19 @@ import re
 
 _ABBR = {"KSND": "kiểm sát nhân dân"}
 
-CAN_CU_DS_2024 = [
-    "Căn cứ Điều 27 Luật Tổ chức Viện kiểm sát nhân dân năm 2014;",
-    "Căn cứ các điều 21, 58 Bộ luật Tố tụng dân sự năm 2015;",
-    "Căn cứ Điều 28 Thông tư liên tịch số 02/2016/TTLT-VKSNDTC-TANDTC ngày 31/8/2016 "
-    "của Viện trưởng Viện kiểm sát nhân dân tối cao - Chánh án Tòa án nhân dân tối cao "
-    "quy định việc phối hợp giữa Viện kiểm sát nhân dân và Tòa án nhân dân trong việc "
-    "thi hành một số quy định của Bộ luật Tố tụng dân sự.",
-]
-# Mẫu 36/DS (QĐ 195/QĐ-VKSTC ngày 30/6/2026) cho văn bản từ 2025 trở đi.
-CAN_CU_DS_2026 = [
-    "Căn cứ Điều 27 Luật Tổ chức Viện kiểm sát nhân dân năm 2014 "
-    "(sửa đổi, bổ sung bởi Luật số 82/2025/QH15);",
-    "Căn cứ các điều 21, 58 Bộ luật Tố tụng dân sự năm 2015 (đã được sửa đổi, bổ sung).",
+# Mẫu 36/DS (QĐ 195/QĐ-VKSTC ngày 30/6/2026) — phát biểu tại phiên tòa sơ thẩm.
+# Khi xuất .docx, các đoạn "Căn cứ" lấy thẳng từ template trong data/templates;
+# bản này chỉ để văn bản hiển thị trên giao diện khớp với file Word.
+CAN_CU_DS = [
+    "Căn cứ Điều 27 Luật Tổ chức Viện kiểm sát nhân dân năm 2014 đã được sửa đổi, bổ sung "
+    "bởi Luật số 82/2025/QH15;",
+    "Căn cứ các điều 21, 58, 262 Bộ luật Tố tụng dân sự số 92/2015/QH13 đã được sửa đổi, bổ sung "
+    "bởi Bộ luật số 45/2019/QH14, Luật số 59/2020/QH14, Luật số 13/2022/QH15, Luật số 19/2023/QH15, "
+    "Luật số 34/2024/QH15, Luật số 46/2024/QH15 và Luật số 85/2025/QH15;",
+    "Căn cứ Điều 29 Thông tư liên tịch số 07/2026/TTLT-VKSNDTC-TANDTC ngày 10/3/2026 của Viện "
+    "trưởng Viện kiểm sát nhân dân tối cao - Chánh án Tòa án nhân dân tối cao quy định việc phối "
+    "hợp giữa Viện kiểm sát nhân dân và Tòa án nhân dân trong việc thi hành một số quy định của "
+    "Bộ luật Tố tụng dân sự.",
 ]
 
 PARTY_LABELS = (
@@ -161,9 +161,8 @@ def build_phat_bieu(parsed: dict) -> tuple[str, dict]:
     court = parsed["toa_an"] or "Tòa án nhân dân"
     case = parsed["ten_vu_an"]
     year = parsed["year"]
-    can_cu = CAN_CU_DS_2024 if year and year < 2025 else CAN_CU_DS_2026
 
-    body: list[str] = list(can_cu)
+    body: list[str] = list(CAN_CU_DS)
     body.append(
         f"Hôm nay, {court} mở phiên tòa sơ thẩm giải quyết vụ án dân sự về “{case}” "
         "giữa các đương sự:"
@@ -208,9 +207,53 @@ def build_phat_bieu(parsed: dict) -> tuple[str, dict]:
         "nam": str(year) if year else "20…",
         "ten_vu_an": case,
         "ksv": parsed["ksv"],
+        "hanh_chinh": False,
+        "loai": "dân sự",
+        "ma_loai": "DS",
+        "toa_an_tail": _tail(court, "Tòa án nhân dân"),
+        "vks_tail": _tail(vks, "Viện kiểm sát nhân dân"),
         "noi_nhan": ["Tòa án xét xử sơ thẩm;", "Lãnh đạo cơ quan, đơn vị phụ trách (để báo cáo);", "Lưu: VT, HSKS."],
     }
     return "\n".join(body), header
+
+
+def _tail(full_name: str, prefix: str) -> str:
+    """'Tòa án nhân dân tỉnh Nghệ An' -> 'tỉnh Nghệ An' (phần điền vào ô '…(n)…' của mẫu)."""
+    text = (full_name or "").strip()
+    if text.lower().startswith(prefix.lower()):
+        text = text[len(prefix):].strip()
+    return text
+
+
+def split_phat_bieu_text(text: str) -> dict | None:
+    """Tách văn bản Phát biểu (dạng phẳng, do code hoặc AI sinh) thành các phần để điền vào
+    template chính thức. Trả None nếu thiếu mốc bắt buộc → dùng cách dựng từ đầu."""
+    lines = _lines(text)
+
+    def at(pattern: str, start: int = 0) -> int | None:
+        return _find(lines, pattern, start)
+
+    hom = at(r"^Hôm nay")
+    qua = at(r"^Qua nghiên cứu", hom or 0)
+    sec_i = at(r"^I\.\s", qua or 0)
+    s1 = at(r"^1\.\s*(Việc|Về việc) tuân theo", sec_i or 0)
+    s2 = at(r"^2\.\s*Việc tuân theo pháp luật tố tụng của Hội đồng", s1 or 0)
+    s3 = at(r"^3\.\s*Việc chấp hành", s2 or 0)
+    sec_ii = at(r"^II\.\s", s3 or 0)
+    sec_iii = at(r"^III\.\s", sec_ii or 0)
+    closing = at(r"^Trên đây là ý kiến", sec_ii or 0)
+    required = (hom, qua, sec_i, s1, s2, s3, sec_ii, closing)
+    if any(value is None for value in required):
+        return None
+    ii_end = sec_iii if sec_iii is not None else closing
+    return {
+        "parties": lines[hom + 1:qua],
+        "sec1": lines[s1 + 1:s2],
+        "sec2": lines[s2 + 1:s3],
+        "sec3": lines[s3 + 1:sec_ii],
+        "giai_quyet": lines[sec_ii + 1:ii_end],
+        "kien_nghi": lines[sec_iii + 1:closing] if sec_iii is not None else [],
+    }
 
 
 def summarize_check(parsed: dict) -> str:

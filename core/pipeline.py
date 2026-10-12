@@ -440,10 +440,24 @@ def build_ds_header(facts_json: str) -> dict | None:
         vks = {}
     tinh = str(vks.get("tinh_thanh") or "").strip()
     hc = _is_hanh_chinh(facts_json)
-    so = "PB-VKS-HC" if hc else "PB-VKS-DS"
+    loai = str(facts.get("loai_vu_viec") or "dân sự").strip().lower()
+    ma_loai = (
+        "HC" if hc else "HNGĐ" if "hôn nhân" in loai else "KDTM" if "kinh doanh" in loai
+        else "LĐ" if "lao động" in loai else "DS"
+    )
+    so = f"PB-VKS-{ma_loai}"
+    court = str(facts.get("toa_an_thu_ly") or "")
+    vks_name = str(vks.get("ten_day_du") or "")
     return {
         "kind": "PHAT_BIEU",
         "hanh_chinh": hc,
+        "loai": "hành chính" if hc else ("dân sự" if ma_loai == "DS" else loai),
+        "ma_loai": ma_loai,
+        "toa_an_tail": phat_bieu._tail(court, "Tòa án nhân dân") if _is_filled(court) else "",
+        "vks_tail": (
+            phat_bieu._tail(vks_name, "Viện kiểm sát nhân dân") if _is_filled(vks_name)
+            else (tinh and f"tỉnh {tinh}")
+        ),
         "unit_parent": "VIỆN KSND TỐI CAO",
         "unit_name": f"VIỆN KSND TỈNH {tinh.upper()}" if _is_filled(tinh) else "VIỆN KSND …",
         "so_ky_hieu": f"Số:      /{so}",
