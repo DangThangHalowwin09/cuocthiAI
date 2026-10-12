@@ -381,7 +381,14 @@ if saved and saved["file_key"] == file_key:
         "Hình sự" if result["case_type"] == "HINH_SU"
         else ("Hành chính" if result.get("is_hanh_chinh") else "Dân sự / HNGĐ / KDTM / Lao động")
     )
-    st.success(f"Đã soạn xong bản thảo — loại vụ việc: **{loai_hien_thi}**")
+    mau_ap_dung = (
+        "Cáo trạng (Mẫu 156/HS)" if result["case_type"] == "HINH_SU"
+        else ("Phát biểu của Kiểm sát viên (Mẫu 35/HC)" if result.get("is_hanh_chinh")
+              else "Phát biểu của Kiểm sát viên (Mẫu 36/DS)")
+    )
+    st.success(
+        f"Đã soạn xong bản thảo — loại vụ việc: **{loai_hien_thi}** → dùng mẫu: **{mau_ap_dung}**"
+    )
 
     internal_check = result["internal_check"]
     if saved["used_ocr"] or saved["input_warnings"]:

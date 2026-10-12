@@ -443,6 +443,7 @@ def build_ds_header(facts_json: str) -> dict | None:
     so = "PB-VKS-HC" if hc else "PB-VKS-DS"
     return {
         "kind": "PHAT_BIEU",
+        "hanh_chinh": hc,
         "unit_parent": "VIỆN KSND TỐI CAO",
         "unit_name": f"VIỆN KSND TỈNH {tinh.upper()}" if _is_filled(tinh) else "VIỆN KSND …",
         "so_ky_hieu": f"Số:      /{so}",

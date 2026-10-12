@@ -535,7 +535,10 @@ def _add_page_number(doc: Document):
 
 
 def _add_phat_bieu_line(doc: Document, line: str, header: dict):
-    paragraph = doc.add_paragraph()
+    _add_phat_bieu_line_to(doc.add_paragraph(), line, header)
+
+
+def _add_phat_bieu_line_to(paragraph: Paragraph, line: str, header: dict):
     paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     case = header.get("ten_vu_an", "")
     if _BOLD_HEADING.match(line):
@@ -558,53 +561,70 @@ def _add_phat_bieu_line(doc: Document, line: str, header: dict):
     _add_run(paragraph, line, size=14, italic=italic_all)
 
 
-def write_phat_bieu_docx(final_text: str, output_path: str, header: dict | None = None) -> str:
-    """Xuất PHÁT BIỂU của Kiểm sát viên (dân sự/hành chính) đúng bố cục bản mẫu:
-    đầu trang 2 cột, tiêu đề 3 dòng, nội dung, Nơi nhận + Kiểm sát viên ở cuối."""
-    header = header or {}
-    document_text, appendix = split_internal_check(final_text)
+PHAT_BIEU_TEMPLATE_PATH = (
+    Path(__file__).resolve().parents[1] / "data" / "templates" / "36-Phat-bieu.docx"
+)
+_BODY_MARKER = "{{NOI_DUNG_PHAT_BIEU}}"
 
-    doc = Document()
+# Token trong template → khóa trong header (xem phat_bieu.build_phat_bieu / pipeline.build_ds_header)
+_TEMPLATE_TOKENS = {
+    "{{DON_VI_CAP_TREN}}": "unit_parent",
+    "{{DON_VI_BAN_HANH}}": "unit_name",
+    "{{SO_KY_HIEU}}": "so_ky_hieu",
+    "{{DIA_DANH}}": "dia_danh",
+    "{{NAM}}": "nam",
+    "{{LOAI_PHIEN_TOA}}": "loai_phien_toa",
+    "{{TEN_VU_AN}}": "ten_vu_an",
+    "{{KIEM_SAT_VIEN}}": "ksv",
+}
+
+
+def _phat_bieu_values(header: dict) -> dict:
+    case = header.get("ten_vu_an", "")
+    hanh_chinh = bool(header.get("hanh_chinh"))
+    return {
+        "unit_parent": header.get("unit_parent") or "VIỆN KIỂM SÁT NHÂN DÂN TỐI CAO",
+        "unit_name": header.get("unit_name") or "VIỆN KIỂM SÁT NHÂN DÂN …",
+        "so_ky_hieu": header.get("so_ky_hieu") or "Số:      /PB-VKS-…",
+        "dia_danh": header.get("dia_danh") or "…",
+        "nam": header.get("nam") or "20…",
+        "loai_phien_toa": (
+            "Của Kiểm sát viên tại phiên tòa hành chính sơ thẩm"
+            if hanh_chinh else "Của Kiểm sát viên tại phiên tòa sơ thẩm"
+        ),
+        "ten_vu_an": case or "…",
+        "ksv": header.get("ksv") or "(Ký, ghi rõ họ tên)",
+    }
+
+
+def _compose_phat_bieu(doc: Document, values: dict, body_lines: list[str], header: dict):
+    """Dựng bố cục PHÁT BIỂU (đầu trang 2 cột, tiêu đề 3 dòng, nội dung, nơi nhận + KSV)."""
     _set_margins(doc)
     normal = doc.styles["Normal"]
     normal.font.name = FONT_NAME
     normal.font.size = Pt(14)
     _add_page_number(doc)
 
-    nam = header.get("nam") or "20…"
-    dia_danh = header.get("dia_danh") or "…"
     _add_header_table(
-        doc,
-        header.get("unit_name") or "VIỆN KIỂM SÁT NHÂN DÂN …",
-        header.get("unit_parent") or "VIỆN KIỂM SÁT NHÂN DÂN TỐI CAO",
-        header.get("so_ky_hieu") or "Số:      /PB-VKS-…",
-        f"{dia_danh}, ngày      tháng      năm {nam}",
+        doc, values["unit_name"], values["unit_parent"], values["so_ky_hieu"],
+        f"{values['dia_danh']}, ngày      tháng      năm {values['nam']}",
     )
     doc.add_paragraph()
-
-    case = header.get("ten_vu_an", "")
-    for text, size in (
-        ("PHÁT BIỂU", 14),
-        ("Của Kiểm sát viên tại phiên tòa sơ thẩm", 14),
-        (f"giải quyết vụ án {case}" if case else "giải quyết vụ án …", 14),
-    ):
+    for text in ("PHÁT BIỂU", values["loai_phien_toa"], f"giải quyết vụ án {values['ten_vu_an']}"):
         paragraph = doc.add_paragraph()
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         _set_single_spacing(paragraph)
-        _add_run(paragraph, text, size=size, bold=True)
+        _add_run(paragraph, text, size=14, bold=True)
     doc.add_paragraph()
 
-    for raw_line in document_text.splitlines():
-        line = raw_line.strip()
-        if line:
-            _add_phat_bieu_line(doc, line, header)
+    for line in body_lines:
+        _add_phat_bieu_line(doc, line, header)
 
     doc.add_paragraph()
     footer = doc.add_table(rows=1, cols=2)
     footer.autofit = True
     # Không để khối Nơi nhận / Kiểm sát viên bị tách qua hai trang.
-    row_properties = footer.rows[0]._tr.get_or_add_trPr()
-    row_properties.append(OxmlElement("w:cantSplit"))
+    footer.rows[0]._tr.get_or_add_trPr().append(OxmlElement("w:cantSplit"))
     for paragraph in doc.paragraphs[-2:]:
         paragraph.paragraph_format.keep_with_next = True
     left, right = footer.rows[0].cells
@@ -627,11 +647,87 @@ def write_phat_bieu_docx(final_text: str, output_path: str, header: dict | None 
     name = right.add_paragraph()
     name.alignment = WD_ALIGN_PARAGRAPH.CENTER
     _set_single_spacing(name)
-    _add_run(name, header.get("ksv") or "(Ký, ghi rõ họ tên)", size=14, bold=bool(header.get("ksv")))
+    _add_run(name, values["ksv"], size=14, bold=values["ksv"] != "(Ký, ghi rõ họ tên)")
+
+
+def ensure_phat_bieu_template(path: Path = PHAT_BIEU_TEMPLATE_PATH) -> Path:
+    """Tạo template Phát biểu (Mẫu 36/DS - 35/HC) nếu chưa có. Template là file .docx
+    thường: có thể mở bằng Word để chỉnh font, lề, tiêu đề; các {{TOKEN}} và
+    {{NOI_DUNG_PHAT_BIEU}} sẽ được hệ thống thay khi xuất kết quả."""
+    if path.is_file():
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tokens = {key: token for token, key in _TEMPLATE_TOKENS.items()}
+    doc = Document()
+    _compose_phat_bieu(doc, tokens, [_BODY_MARKER], {})
+    doc.save(str(path))
+    return path
+
+
+def _replace_in_paragraph(paragraph: Paragraph, mapping: dict):
+    for run in paragraph.runs:
+        for token, value in mapping.items():
+            if token in run.text:
+                run.text = run.text.replace(token, value)
+
+
+def _move_after(previous: Paragraph, paragraph: Paragraph) -> Paragraph:
+    previous._p.addnext(paragraph._p)
+    return paragraph
+
+
+def _fill_phat_bieu_template(template_path: Path, final_text: str, output_path: str, header: dict):
+    doc = Document(str(template_path))
+    values = _phat_bieu_values(header)
+    mapping = {token: values[key] for token, key in _TEMPLATE_TOKENS.items()}
+
+    containers = [doc]
+    containers += [section.header for section in doc.sections]
+    for container in containers:
+        for paragraph in container.paragraphs:
+            _replace_in_paragraph(paragraph, mapping)
+    for paragraph in _iter_paragraphs(doc):
+        _replace_in_paragraph(paragraph, mapping)
+
+    marker = next((p for p in doc.paragraphs if _BODY_MARKER in p.text), None)
+    if marker is None:
+        raise ValueError(f"Template Phát biểu thiếu vùng nội dung: {_BODY_MARKER}")
+    previous = marker
+    for raw_line in final_text.splitlines():
+        line = raw_line.strip()
+        if line:
+            created = doc.add_paragraph()
+            _add_phat_bieu_line_to(created, line, header)
+            previous = _move_after(previous, created)
+    _remove_paragraph(marker)
+    # Giữ đoạn kết + dòng trống đi cùng khối Nơi nhận / Kiểm sát viên (không tách trang).
+    paragraphs = doc.paragraphs
+    for index, paragraph in enumerate(paragraphs):
+        if paragraph._p is previous._p:
+            for keep in paragraphs[index:index + 2]:
+                keep.paragraph_format.keep_with_next = True
+            break
+    doc.save(output_path)
+
+
+def write_phat_bieu_docx(final_text: str, output_path: str, header: dict | None = None) -> str:
+    """Xuất PHÁT BIỂU của Kiểm sát viên (dân sự/hành chính) từ template trong
+    data/templates (hoặc biến môi trường PHAT_BIEU_TEMPLATE_PATH)."""
+    header = header or {}
+    document_text, appendix = split_internal_check(final_text)
+    template = Path(os.environ.get("PHAT_BIEU_TEMPLATE_PATH") or PHAT_BIEU_TEMPLATE_PATH)
+    try:
+        _fill_phat_bieu_template(ensure_phat_bieu_template(template), document_text, output_path, header)
+    except ValueError:
+        # Template do người dùng tự thay không có vùng nội dung → dựng từ đầu theo bố cục mẫu.
+        doc = Document()
+        _compose_phat_bieu(doc, _phat_bieu_values(header), document_text.splitlines(), header)
+        doc.save(output_path)
 
     if appendix:
+        doc = Document(output_path)
         _append_appendix_after_document(doc, appendix)
-    doc.save(output_path)
+        doc.save(output_path)
     return output_path
 
 
