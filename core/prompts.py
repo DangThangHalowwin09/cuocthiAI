@@ -185,17 +185,37 @@ EXTRACT_PROMPT_DS = """Nhiệm vụ: trích xuất dữ kiện từ hồ sơ v�
 JSON có cấu trúc. Chỉ lấy thông tin CÓ TRONG hồ sơ. Trường nào không có
 thông tin thì ghi giá trị "THIẾU DỮ LIỆU".
 
+QUY TẮC: chép NGUYÊN VĂN và ĐẦY ĐỦ (họ tên, danh xưng Ông/Bà/Anh/Chị, năm sinh,
+địa chỉ, số hiệu, ngày tháng, số tiền, số bút lục, điều luật). Không rút gọn,
+không đổi danh xưng, không bỏ năm sinh. Nơi hồ sơ để trống năm sinh thì giữ
+trống đúng như hồ sơ.
+
 Cấu trúc JSON cần trả về:
 {{
   "loai_vu_viec": "dân sự | hôn nhân gia đình | kinh doanh thương mại | lao động | hành chính",
+  "ten_vu_an": "tên vụ án đúng như hồ sơ, ví dụ: Tranh chấp quyền sử dụng đất, hủy quyết định cá biệt",
+  "toa_an_thu_ly": "tên đầy đủ Tòa án thụ lý, ví dụ: Tòa án nhân dân tỉnh Nghệ An",
+  "vks_phat_bieu": {{"ten_day_du": "Viện kiểm sát nhân dân tham gia phiên tòa", "tinh_thanh": "ví dụ: Nghệ An"}},
+  "kiem_sat_vien": "họ tên Kiểm sát viên (nếu hồ sơ nêu)",
+  "duong_su_nguyen_van": "chép NGUYÊN VĂN khối đương sự theo từng nhóm (Nguyên đơn / Bị đơn / Người có quyền lợi, nghĩa vụ liên quan), mỗi người một dòng '- Ông/Bà ..., sinh năm ...' kèm dòng địa chỉ như hồ sơ",
   "nguyen_don_nguoi_khoi_kien": [{{"ho_ten": ""}}],
   "bi_don_nguoi_bi_kien": [{{"ho_ten": ""}}],
   "nguoi_co_quyen_loi_nghia_vu_lien_quan": [{{"ho_ten": ""}}],
   "quan_he_phap_luat_tranh_chap": "",
-  "yeu_cau_khoi_kien": "",
-  "chung_cu_tai_lieu": ["..."],
-  "qua_trinh_to_tung_tom_tat": "",
-  "toa_an_thu_ly": "",
+  "yeu_cau_khoi_kien": ["từng yêu cầu khởi kiện, nguyên văn; ghi rõ yêu cầu nào đã rút/bổ sung và ngày"],
+  "loi_trinh_bay_cac_ben": [{{"ben": "", "noi_dung_chi_tiet": ""}}],
+  "chung_cu_tai_lieu": ["tên chứng cứ + số/ngày + số bút lục + nội dung chính"],
+  "qua_trinh_to_tung": {{
+    "thu_ly": "số, ngày thụ lý, thủ tục sơ thẩm",
+    "tham_quyen_va_tu_cach_to_tung": "",
+    "thu_thap_chung_cu": "việc xác minh, thu thập, giao nộp chứng cứ; những tài liệu CHƯA được xác minh, thu thập (nếu hồ sơ nêu)",
+    "tiep_can_cong_khai_hoa_giai": "",
+    "tong_dat_thu_tuc": "",
+    "thoi_han_chuan_bi_xet_xu": ""
+  }},
+  "dieu_luat_ho_so_vien_dan": ["các điều luật mà chính hồ sơ nêu, ví dụ: Điều 217 BLTTDS"],
+  "de_xuat_quan_diem_trong_ho_so": "nếu hồ sơ đã có phần đề xuất/quan điểm giải quyết thì chép NGUYÊN VĂN, đầy đủ",
+  "an_phi_va_quyen_khang_cao": "",
   "ghi_chu_thieu_du_lieu": ["liệt kê các thông tin quan trọng còn thiếu"]
 }}
 
@@ -536,11 +556,46 @@ I. VỀ VIỆC TUÂN THEO PHÁP LUẬT TỐ TỤNG (3 mục nhỏ: Thẩm phán;
 II. VỀ VIỆC GIẢI QUYẾT VỤ ÁN (phân tích chứng cứ, quan hệ pháp luật
     tranh chấp/tính hợp pháp của quyết định hành chính, căn cứ pháp
     luật, quan điểm/đề nghị của VKS)
-III. YÊU CẦU, KIẾN NGHỊ KHẮC PHỤC VI PHẠM (NẾU CÓ)
+III. YÊU CẦU, KIẾN NGHỊ KHẮC PHỤC VI PHẠM (CHỈ VIẾT khi hồ sơ có vi phạm cần
+     kiến nghị; không có thì BỎ HẲN mục III, không viết "không có")
 
-CHỈ trích dẫn điều luật có trong mục "ĐIỀU LUẬT LIÊN QUAN" bên dưới. Nếu
-JSON có trường ghi "THIẾU DỮ LIỆU" ở mục quan trọng, phải thể hiện rõ
-[THIẾU DỮ LIỆU: ...] tại đúng vị trí trong bản thảo, không tự bịa cho đủ.
+CÁCH VIẾT (bám sát bản Phát biểu mẫu của Viện kiểm sát):
+(1) Bắt đầu từ dòng "Căn cứ ..." — KHÔNG xuất quốc hiệu, tên cơ quan, tiêu đề
+    PHÁT BIỂU, "Nơi nhận", chữ ký (bộ ghi file đã tự dựng). Không dùng Markdown
+    (không **, không #, không ---).
+(2) Mở đầu đúng thứ tự: các dòng "Căn cứ ..." như mẫu tham chiếu; "Hôm nay,
+    <Tòa án> mở phiên tòa sơ thẩm giải quyết vụ án <loại> về “<tên vụ án>” giữa
+    các đương sự:"; rồi khối đương sự; rồi "Qua nghiên cứu hồ sơ vụ án ..., kết
+    quả kiểm sát việc tuân theo pháp luật của <Tòa án> và tham gia phiên tòa sơ
+    thẩm hôm nay, đại diện <Viện kiểm sát> phát biểu ý kiến như sau:".
+(3) KHỐI ĐƯƠNG SỰ: chép NGUYÊN VĂN từ "duong_su_nguyen_van": nhãn "Nguyên đơn:",
+    "Bị đơn:", "Người có quyền lợi, nghĩa vụ liên quan:"; mỗi người một dòng
+    "- Ông/Bà/Anh/Chị <họ tên>, sinh năm <năm>;" kèm dòng "Địa chỉ:/Trú tại:/Đều
+    trú tại:". Giữ nguyên danh xưng, năm sinh, địa chỉ; năm sinh trống thì để
+    trống như hồ sơ. Cấm đánh số lại, cấm bỏ người, cấm đổi danh xưng.
+(4) I.1 "Về việc tuân theo pháp luật tố tụng": nêu theo từng gạch đầu dòng: thẩm
+    quyền thụ lý (điều luật), tư cách tham gia tố tụng, xác minh thu thập chứng
+    cứ (kèm các tài liệu CHƯA được xác minh/thu thập nếu hồ sơ nêu — đây là
+    nhận xét quan trọng), tiếp cận công khai chứng cứ - hòa giải, tống đạt, thời
+    hạn chuẩn bị xét xử. Dùng đúng điều luật mà hồ sơ đã dẫn.
+    I.2 và I.3 viết ngắn: HĐXX, Thư ký / người tham gia tố tụng "đã thực hiện
+    đúng, đầy đủ quy định ..." (trừ khi hồ sơ nêu vi phạm).
+(5) II: đánh số 1., 2., ... theo TỪNG yêu cầu khởi kiện. Mỗi yêu cầu: nêu yêu cầu,
+    tài liệu chứng cứ (kèm số bút lục, ngày, số tiền), lời khai các bên, nhận
+    định của Viện kiểm sát có căn cứ, rồi kết luận có/không có căn cứ. Yêu cầu
+    đã rút thì đề nghị Tòa án đình chỉ theo điều luật hồ sơ nêu. Cuối II nêu án
+    phí và quyền kháng cáo (kèm điều luật).
+(6) Kết thúc đúng câu: "Trên đây là ý kiến của đại diện <Viện kiểm sát> về việc
+    tuân theo pháp luật tố tụng và giải quyết vụ án <tên vụ án> nêu trên. Đề
+    nghị HĐXX xem xét, quyết định."
+(7) Nếu JSON có "de_xuat_quan_diem_trong_ho_so" hoặc nhận xét tố tụng đã có sẵn
+    thì GIỮ NGUYÊN VĂN (không viết lại, không rút gọn); chỉ đánh số lại mục.
+
+CHỈ trích dẫn điều luật mà hồ sơ đã nêu ("dieu_luat_ho_so_vien_dan") hoặc có
+trong mục "ĐIỀU LUẬT LIÊN QUAN" bên dưới. Điều luật do HỒ SƠ nêu thì ghi thẳng,
+KHÔNG gắn [CẦN KIỂM TRA LẠI ĐIỀU LUẬT]; chỉ gắn nhãn đó cho điều luật bạn tự
+bổ sung mà không có trong cả hai nguồn. Nếu JSON ghi "THIẾU DỮ LIỆU" ở mục
+quan trọng, thể hiện rõ [THIẾU DỮ LIỆU: ...] tại đúng vị trí, không tự bịa.
 
 --- MẪU THAM CHIẾU ---
 {mau_tham_chieu}

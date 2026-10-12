@@ -467,8 +467,10 @@ def _write_from_template(
 
 def _add_header_table(doc: Document, unit_name: str, unit_parent: str, so_ky_hieu: str, dia_danh_ngay: str):
     table = doc.add_table(rows=1, cols=2)
-    table.autofit = True
+    table.autofit = False
     left_cell, right_cell = table.rows[0].cells
+    # Cột phải đủ rộng để quốc hiệu nằm trên MỘT dòng (trang A4, lề 3cm/2cm → 16cm).
+    left_cell.width, right_cell.width = Cm(6.4), Cm(9.6)
 
     table.style = None
 
@@ -486,7 +488,7 @@ def _add_header_table(doc: Document, unit_name: str, unit_parent: str, so_ky_hie
 
     p3 = left_cell.add_paragraph()
     p3.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _set_single_spacing(p3)
+    _set_single_spacing(p3, space_before=10)
     _add_run(p3, so_ky_hieu, size=13, bold=False)
 
     # --- CỘT PHẢI: Quốc hiệu, Tiêu ngữ, Địa danh ngày tháng ---
@@ -503,10 +505,134 @@ def _add_header_table(doc: Document, unit_name: str, unit_parent: str, so_ky_hie
 
     q3 = right_cell.add_paragraph()
     q3.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _set_single_spacing(q3)
+    _set_single_spacing(q3, space_before=10)
     _add_run(q3, dia_danh_ngay, size=13, italic=True)
 
     return table
+
+
+_PARTY_LABEL = re.compile(
+    r"^(Nguyên đơn|Bị đơn|Người có quyền lợi,? nghĩa vụ liên quan|Người khởi kiện|Người bị kiện)\s*:"
+)
+_BOLD_HEADING = re.compile(r"^(?:[IV]+\.\s+[A-ZÀ-Ỹ]|\d\.\s+(?:Về việc|Việc))")
+
+
+def _add_page_number(doc: Document):
+    """Số trang căn giữa ở đầu trang (đúng thể thức văn bản hành chính)."""
+    header_paragraph = doc.sections[0].header.paragraphs[0]
+    header_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = header_paragraph.add_run()
+    _set_font(run, 13)
+    for kind, text in (("begin", None), (None, "PAGE"), ("end", None)):
+        if kind:
+            element = OxmlElement("w:fldChar")
+            element.set(qn("w:fldCharType"), kind)
+        else:
+            element = OxmlElement("w:instrText")
+            element.set(qn("xml:space"), "preserve")
+            element.text = text
+        run._r.append(element)
+
+
+def _add_phat_bieu_line(doc: Document, line: str, header: dict):
+    paragraph = doc.add_paragraph()
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    case = header.get("ten_vu_an", "")
+    if _BOLD_HEADING.match(line):
+        _set_single_spacing(paragraph, space_before=6, space_after=6, indent=bool(line[0].isdigit()))
+        _add_run(paragraph, line, size=14, bold=True)
+        return
+    _set_single_spacing(paragraph, space_after=6, indent=True)
+    label = _PARTY_LABEL.match(line)
+    if label:
+        _add_run(paragraph, line[: label.end()], size=14, bold=True)
+        _add_run(paragraph, line[label.end():], size=14)
+        return
+    italic_all = line.startswith("Căn cứ")
+    if case and case in line and not italic_all:
+        before, _, after = line.partition(case)
+        _add_run(paragraph, before, size=14)
+        _add_run(paragraph, case, size=14, italic=True)
+        _add_run(paragraph, after, size=14)
+        return
+    _add_run(paragraph, line, size=14, italic=italic_all)
+
+
+def write_phat_bieu_docx(final_text: str, output_path: str, header: dict | None = None) -> str:
+    """Xuất PHÁT BIỂU của Kiểm sát viên (dân sự/hành chính) đúng bố cục bản mẫu:
+    đầu trang 2 cột, tiêu đề 3 dòng, nội dung, Nơi nhận + Kiểm sát viên ở cuối."""
+    header = header or {}
+    document_text, appendix = split_internal_check(final_text)
+
+    doc = Document()
+    _set_margins(doc)
+    normal = doc.styles["Normal"]
+    normal.font.name = FONT_NAME
+    normal.font.size = Pt(14)
+    _add_page_number(doc)
+
+    nam = header.get("nam") or "20…"
+    dia_danh = header.get("dia_danh") or "…"
+    _add_header_table(
+        doc,
+        header.get("unit_name") or "VIỆN KIỂM SÁT NHÂN DÂN …",
+        header.get("unit_parent") or "VIỆN KIỂM SÁT NHÂN DÂN TỐI CAO",
+        header.get("so_ky_hieu") or "Số:      /PB-VKS-…",
+        f"{dia_danh}, ngày      tháng      năm {nam}",
+    )
+    doc.add_paragraph()
+
+    case = header.get("ten_vu_an", "")
+    for text, size in (
+        ("PHÁT BIỂU", 14),
+        ("Của Kiểm sát viên tại phiên tòa sơ thẩm", 14),
+        (f"giải quyết vụ án {case}" if case else "giải quyết vụ án …", 14),
+    ):
+        paragraph = doc.add_paragraph()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        _set_single_spacing(paragraph)
+        _add_run(paragraph, text, size=size, bold=True)
+    doc.add_paragraph()
+
+    for raw_line in document_text.splitlines():
+        line = raw_line.strip()
+        if line:
+            _add_phat_bieu_line(doc, line, header)
+
+    doc.add_paragraph()
+    footer = doc.add_table(rows=1, cols=2)
+    footer.autofit = True
+    # Không để khối Nơi nhận / Kiểm sát viên bị tách qua hai trang.
+    row_properties = footer.rows[0]._tr.get_or_add_trPr()
+    row_properties.append(OxmlElement("w:cantSplit"))
+    for paragraph in doc.paragraphs[-2:]:
+        paragraph.paragraph_format.keep_with_next = True
+    left, right = footer.rows[0].cells
+    first = left.paragraphs[0]
+    _set_single_spacing(first)
+    _add_run(first, "Nơi nhận:", size=12, bold=True, italic=True)
+    for line in header.get("noi_nhan") or [
+        "Tòa án xét xử sơ thẩm;", "Lãnh đạo cơ quan, đơn vị phụ trách (để báo cáo);", "Lưu: VT, HSKS.",
+    ]:
+        paragraph = left.add_paragraph()
+        _set_single_spacing(paragraph)
+        _add_run(paragraph, f"- {line}", size=11)
+
+    title = right.paragraphs[0]
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _set_single_spacing(title)
+    _add_run(title, "KIỂM SÁT VIÊN", size=14, bold=True)
+    for _ in range(3):
+        right.add_paragraph()
+    name = right.add_paragraph()
+    name.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _set_single_spacing(name)
+    _add_run(name, header.get("ksv") or "(Ký, ghi rõ họ tên)", size=14, bold=bool(header.get("ksv")))
+
+    if appendix:
+        _append_appendix_after_document(doc, appendix)
+    doc.save(output_path)
+    return output_path
 
 
 def write_result_docx(
@@ -519,6 +645,9 @@ def write_result_docx(
     template_path: str | None = None,
     header: dict | None = None,
 ) -> str:
+    if case_type != "HINH_SU":
+        # Phát biểu (dân sự/hành chính) KHÔNG dùng khung Cáo trạng Mẫu 156.
+        return write_phat_bieu_docx(final_text, output_path, header)
     template_path = template_path or os.environ.get("CAO_TRANG_TEMPLATE_PATH")
     if template_path or DEFAULT_TEMPLATE_PATH.is_file():
         return _write_from_template(

@@ -16,6 +16,7 @@ import unicodedata
 from . import model_clients as mc
 from . import prompts as pr
 from . import law_lookup
+from . import phat_bieu
 from .config import GEMINI_STEP_MODELS, MAX_TOKENS_LONG
 
 
@@ -104,7 +105,34 @@ def _preserve_ai_suggestions(document: str, draft: str) -> str:
     return f"{document.rstrip()}\n\n{block}".strip()
 
 
+_HS_MARKERS = re.compile(
+    r"bị can|Bộ luật Hình sự|kết luận điều tra|khởi tố bị can|khởi tố vụ án hình sự|cáo trạng|"
+    r"Cơ quan (?:Cảnh sát )?điều tra|truy tố",
+    re.IGNORECASE,
+)
+_DS_MARKERS = re.compile(
+    r"nguyên đơn|bị đơn|người khởi kiện|người bị kiện|quyền lợi,? nghĩa vụ liên quan|"
+    r"Bộ luật Tố tụng dân sự|BLTTDS|Luật Tố tụng hành chính|vụ án dân sự|vụ án hành chính|"
+    r"báo cáo đề xuất|phiên tòa sơ thẩm|án phí dân sự",
+    re.IGNORECASE,
+)
+
+
+def rule_based_case_type(input_text: str) -> str | None:
+    """Phân loại bằng từ khóa (không AI). Chỉ trả kết quả khi áp đảo rõ ràng;
+    trường hợp nhập nhằng trả None để nhờ mô hình quyết định."""
+    hs, ds = len(_HS_MARKERS.findall(input_text)), len(_DS_MARKERS.findall(input_text))
+    if ds >= 4 and ds >= 3 * max(hs, 1):
+        return "DAN_SU_HANH_CHINH"
+    if hs >= 4 and hs >= 3 * max(ds, 1):
+        return "HINH_SU"
+    return None
+
+
 def classify_case(input_text: str, provider: str = "gemini") -> str:
+    by_rule = rule_based_case_type(input_text)
+    if by_rule:
+        return by_rule
     raw = mc.call_model(
         provider, pr.SYSTEM_BASE, pr.CLASSIFY_PROMPT.format(input_text=input_text),
         **_step_kwargs("classify", provider),
@@ -372,6 +400,89 @@ def lookup_laws(facts_json: str, case_type: str, top_n: int = 10) -> str:
     return law_lookup.format_articles_for_prompt(result)
 
 
+def strip_markdown(text: str) -> str:
+    """Bỏ ký hiệu Markdown mà mô hình hay thêm (**đậm**, ### tiêu đề, ---, bảng)."""
+    out = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if re.fullmatch(r"[-*_=]{3,}", stripped):
+            continue
+        stripped = re.sub(r"^#{1,6}\s*", "", stripped)
+        stripped = re.sub(r"\*\*(.+?)\*\*", r"\1", stripped)
+        stripped = re.sub(r"(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)", r"\1", stripped)
+        stripped = re.sub(r"^[*•]\s+", "- ", stripped)
+        out.append(stripped)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
+def trim_to_phat_bieu_body(text: str) -> str:
+    """Bỏ phần đầu (quốc hiệu, tên cơ quan, tiêu đề PHÁT BIỂU) và phần cuối (Nơi nhận,
+    chữ ký) mô hình hay chèn thừa — bộ ghi .docx đã tự dựng các phần đó."""
+    document, appendix = split_internal_check(text)
+    start = re.search(r"(?m)^\W*Căn cứ", document)
+    if start:
+        document = document[start.start():]
+    tail = re.search(r"(?m)^\W*(?:\*\*)?Nơi nhận", document)
+    if tail:
+        document = document[: tail.start()]
+    document = document.strip()
+    return f"{document}\n\n{appendix}".strip() if appendix else document
+
+
+def build_ds_header(facts_json: str) -> dict | None:
+    """Đầu văn bản Phát biểu (vụ án dân sự/hành chính) từ dữ kiện AI trích xuất."""
+    try:
+        facts = json.loads(facts_json)
+    except (json.JSONDecodeError, AttributeError):
+        return None
+    vks = facts.get("vks_phat_bieu") or {}
+    if not isinstance(vks, dict):
+        vks = {}
+    tinh = str(vks.get("tinh_thanh") or "").strip()
+    hc = _is_hanh_chinh(facts_json)
+    so = "PB-VKS-HC" if hc else "PB-VKS-DS"
+    return {
+        "kind": "PHAT_BIEU",
+        "unit_parent": "VIỆN KSND TỐI CAO",
+        "unit_name": f"VIỆN KSND TỈNH {tinh.upper()}" if _is_filled(tinh) else "VIỆN KSND …",
+        "so_ky_hieu": f"Số:      /{so}",
+        "dia_danh": tinh if _is_filled(tinh) else "",
+        "nam": "20…",
+        "ten_vu_an": str(facts.get("ten_vu_an") or "") if _is_filled(facts.get("ten_vu_an")) else "",
+        "ksv": str(facts.get("kiem_sat_vien") or "") if _is_filled(facts.get("kiem_sat_vien")) else "",
+    }
+
+
+def _try_direct_phat_bieu(input_text: str) -> dict | None:
+    """Hồ sơ là Báo cáo đề xuất dân sự → dựng Phát biểu bằng code (giữ nguyên văn)."""
+    parsed = phat_bieu.parse_bao_cao_de_xuat(input_text)
+    if not parsed or parsed["kind"] != "DAN_SU":
+        return None
+    final, header = phat_bieu.build_phat_bieu(parsed)
+    facts = json.dumps(
+        {
+            "loai_vu_viec": "dân sự",
+            "ten_vu_an": parsed["ten_vu_an"],
+            "toa_an_thu_ly": parsed["toa_an"],
+            "kiem_sat_vien": parsed["ksv"],
+            "so_dong_duong_su": len(parsed["parties"]),
+            "ghi_chu": "Dựng trực tiếp từ Báo cáo đề xuất, không qua bước trích xuất AI.",
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    return {
+        "case_type": "DAN_SU_HANH_CHINH",
+        "is_hanh_chinh": False,
+        "header": header,
+        "facts": facts,
+        "dieu_luat_lien_quan": "(Không tra cứu thêm: các điều luật lấy nguyên từ Báo cáo đề xuất.)",
+        "draft": final,
+        "final": final,
+        "internal_check": phat_bieu.summarize_check(parsed),
+    }
+
+
 def _is_hanh_chinh(facts_json: str) -> bool:
     """Xác định vụ việc dân sự/hành chính có phải HÀNH CHÍNH cụ thể hay
     không (để chọn đúng Mẫu 35/HC thay vì Mẫu 36/DS), dựa vào trường
@@ -430,6 +541,8 @@ def self_check(
         document = trim_to_body(document)
         document = insert_narrative(document, facts_json)
         document = apply_default_text_rules(document)
+    else:
+        document = strip_markdown(trim_to_phat_bieu_body(document))
     return document, appendix
 
 
@@ -457,6 +570,18 @@ def run_pipeline(
     case_type = case_type_override or classify_case(input_text, provider)
     notify("classify", case_type)
 
+    if case_type == "DAN_SU_HANH_CHINH":
+        direct = _try_direct_phat_bieu(input_text)
+        if direct:
+            for step, content in (
+                ("extract", direct["facts"]),
+                ("lookup_laws", direct["dieu_luat_lien_quan"]),
+                ("draft", direct["draft"]),
+                ("self_check", direct["final"]),
+            ):
+                notify(step, content)
+            return direct
+
     facts = extract_facts(input_text, case_type, provider)
     if case_type == "HINH_SU":
         facts = apply_default_values(facts, input_text)
@@ -478,7 +603,7 @@ def run_pipeline(
     return {
         "case_type": case_type,
         "is_hanh_chinh": is_hc,
-        "header": build_header_info(facts) if case_type == "HINH_SU" else None,
+        "header": build_header_info(facts) if case_type == "HINH_SU" else build_ds_header(facts),
         "facts": facts,
         "dieu_luat_lien_quan": dieu_luat_lien_quan,
         "draft": draft,
