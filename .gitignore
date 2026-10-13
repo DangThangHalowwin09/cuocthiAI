@@ -6,3 +6,4 @@ venv/
 *.docx.tmp
 .DS_Store
 _backup_*/
+.cache/

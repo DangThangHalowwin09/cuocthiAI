@@ -12,10 +12,24 @@ API key được đọc từ biến môi trường:
     GOOGLE_API_KEY     - cho Gemini
 """
 
+import hashlib
 import os
+import random
 import time
+from pathlib import Path
 
-from .config import DEFAULT_MODELS, GEMINI_BACKUP_MODEL, MAX_TOKENS_DEFAULT
+from .config import (
+    CACHE_DIR,
+    DEFAULT_MODELS,
+    FALLBACK_PROVIDERS,
+    GEMINI_BACKUP_MODEL,
+    GEMINI_CALL_BUDGET_SECONDS,
+    GEMINI_MODEL_FALLBACKS,
+    GEMINI_REQUEST_TIMEOUT_MS,
+    GEMINI_RETRY_ROUNDS,
+    LLM_CACHE_ENABLED,
+    MAX_TOKENS_DEFAULT,
+)
 
 
 class ModelCallError(RuntimeError):
@@ -97,35 +111,46 @@ def call_gemini(system_prompt: str, user_prompt: str, model: str = None,
             "Google AI Studio (thường bắt đầu bằng AIza), lưu file, rồi chạy lại."
         )
 
-    client = genai.Client(api_key=api_key)
+    # Có hạn chờ cho MỖI lần gọi: một lần treo không được làm cả buổi thi đứng.
+    client = genai.Client(
+        api_key=api_key, http_options=types.HttpOptions(timeout=GEMINI_REQUEST_TIMEOUT_MS)
+    )
     primary = model or DEFAULT_MODELS["gemini"]
-    # Model chính thử 2 lần (quá tải thường chỉ thoáng qua), rồi chuyển sang
-    # model dự phòng (nếu khác model chính).
-    attempts = [primary, primary]
-    if GEMINI_BACKUP_MODEL and GEMINI_BACKUP_MODEL != primary:
-        attempts.append(GEMINI_BACKUP_MODEL)
+    # Chuỗi model: model chính, rồi các model khác. Khi một model quá tải (503/429),
+    # CHUYỂN NGAY sang model khác (mỗi model có năng lực phục vụ riêng) thay vì chờ;
+    # hết một vòng mà vẫn lỗi thì nghỉ (tăng dần) rồi lặp lại vòng mới.
+    chain = [primary]
+    for name in (GEMINI_BACKUP_MODEL, *GEMINI_MODEL_FALLBACKS):
+        if name and name not in chain:
+            chain.append(name)
 
-    last_error = None
-    for index, name in enumerate(attempts):
-        try:
-            response = client.models.generate_content(
-                model=name,
-                contents=user_prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    max_output_tokens=max_tokens,
-                ),
-            )
-            if response.text:
-                return response.text
-            last_error = RuntimeError("Model trả về nội dung rỗng")
-        except Exception as e:  # noqa: BLE001
-            last_error = e
-            if not _is_retryable(e):
-                raise ModelCallError(f"Lỗi gọi Gemini API: {e}") from e
-        if index == 0:
-            time.sleep(3)
-    raise ModelCallError(f"Lỗi gọi Gemini API (đã thử cả model dự phòng): {last_error}") from last_error
+    deadline = time.monotonic() + GEMINI_CALL_BUDGET_SECONDS
+    last_error: Exception | None = None
+    for round_index in range(GEMINI_RETRY_ROUNDS):
+        for name in chain:
+            if time.monotonic() > deadline:
+                break
+            try:
+                response = client.models.generate_content(
+                    model=name,
+                    contents=user_prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_prompt,
+                        max_output_tokens=max_tokens,
+                    ),
+                )
+                if response.text:
+                    return response.text
+                last_error = RuntimeError("Model trả về nội dung rỗng")
+            except Exception as e:  # noqa: BLE001
+                last_error = e
+                if not _is_retryable(e):
+                    raise ModelCallError(f"Lỗi gọi Gemini API: {e}") from e
+        if round_index < GEMINI_RETRY_ROUNDS - 1 and time.monotonic() < deadline:
+            time.sleep(min(4 * (2 ** round_index) + random.uniform(0, 2), 20))
+    raise ModelCallError(
+        f"Lỗi gọi Gemini API (đã thử {len(chain)} model, {GEMINI_RETRY_ROUNDS} vòng): {last_error}"
+    ) from last_error
 
 
 def _is_retryable(error: Exception) -> bool:
@@ -145,10 +170,56 @@ _PROVIDERS = {
 }
 
 
+_KEY_ENV = {"claude": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GOOGLE_API_KEY"}
+
+
+def _cache_file(provider: str, system_prompt: str, user_prompt: str, kwargs: dict) -> Path:
+    raw = "\x1f".join(
+        (provider, str(kwargs.get("model") or ""), str(kwargs.get("max_tokens") or ""),
+         system_prompt, user_prompt)
+    )
+    return CACHE_DIR / (hashlib.sha256(raw.encode("utf-8")).hexdigest() + ".txt")
+
+
 def call_model(provider: str, system_prompt: str, user_prompt: str, **kwargs) -> str:
-    """Điểm vào DUY NHẤT mà pipeline.py sử dụng để gọi bất kỳ model nào."""
+    """Điểm vào DUY NHẤT mà pipeline.py sử dụng để gọi bất kỳ model nào.
+
+    - Bộ nhớ đệm trên đĩa: cùng một lời gọi (cùng model + prompt) trả kết quả đã có ngay.
+      Nhờ đó nếu một bước giữa chừng lỗi, bấm chạy lại chỉ gọi lại các bước chưa xong.
+    - Dự phòng chéo nhà cung cấp: Gemini lỗi hẳn thì thử Claude/OpenAI nếu có API key.
+    """
     if provider not in _PROVIDERS:
         raise ValueError(
             f"Provider '{provider}' không được hỗ trợ. Chọn một trong: {list(_PROVIDERS)}"
         )
-    return _PROVIDERS[provider](system_prompt, user_prompt, **kwargs)
+    cache_file = _cache_file(provider, system_prompt, user_prompt, kwargs) if LLM_CACHE_ENABLED else None
+    if cache_file is not None:
+        try:
+            if cache_file.is_file():
+                return cache_file.read_text(encoding="utf-8")
+        except OSError:
+            pass
+
+    try:
+        result = _PROVIDERS[provider](system_prompt, user_prompt, **kwargs)
+    except ModelCallError as primary_error:
+        result = None
+        for alternative in FALLBACK_PROVIDERS:
+            if alternative == provider or not os.environ.get(_KEY_ENV[alternative]):
+                continue
+            alt_kwargs = {k: v for k, v in kwargs.items() if k != "model"}  # tên model riêng từng nhà
+            try:
+                result = _PROVIDERS[alternative](system_prompt, user_prompt, **alt_kwargs)
+                break
+            except ModelCallError:
+                continue
+        if result is None:
+            raise primary_error
+
+    if cache_file is not None and result:
+        try:
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(result, encoding="utf-8")
+        except OSError:
+            pass
+    return result

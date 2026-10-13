@@ -333,6 +333,10 @@ if run_clicked:
     except ModelCallError as e:
         status_box.update(label="Lỗi khi gọi mô hình AI", state="error")
         st.error(str(e))
+        st.info(
+            "Máy chủ AI đang quá tải hoặc chậm — đây là lỗi tạm thời phía nhà cung cấp, không phải do hồ sơ. "
+            "Hãy bấm **Chạy xử lý** lại sau ít giây: các bước đã xong được lưu nên lần chạy lại sẽ nhanh hơn nhiều."
+        )
         st.stop()
     except Exception as e:  # noqa: BLE001
         status_box.update(label="Lỗi không xác định", state="error")

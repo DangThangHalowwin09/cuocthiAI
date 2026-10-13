@@ -7,7 +7,7 @@ của Kiểm sát viên tại phiên tòa sơ thẩm).
 """
 
 DEFAULT_MODELS = {
-    "claude": "claude-sonnet-4-6",
+    "claude": "claude-sonnet-5-5",
     "openai": "gpt-4o",
     "gemini": "gemini-3.5-flash-lite",
 }
@@ -58,3 +58,25 @@ GEMINI_STEP_MODELS = {
 # Model dự phòng: khi model chính báo quá tải (503/429), hết quota hoặc bị gỡ
 # (404), hệ thống tự gọi lại bằng model này để không gián đoạn buổi thi.
 GEMINI_BACKUP_MODEL = "gemini-3.5-flash-lite"
+
+# ---------------------------------------------------------------------------
+# ĐỘ BỀN KHI GỌI MODEL (quá tải / chậm lúc thi)
+# ---------------------------------------------------------------------------
+# Mỗi lần gọi Gemini: tối đa N vòng, mỗi vòng thử lần lượt các model trong chuỗi
+# (model chính -> GEMINI_BACKUP_MODEL -> GEMINI_MODEL_FALLBACKS); nghỉ tăng dần giữa các vòng.
+GEMINI_RETRY_ROUNDS = 3
+GEMINI_REQUEST_TIMEOUT_MS = 90_000      # một lần gọi treo quá 90 giây thì bỏ, chuyển model khác
+GEMINI_CALL_BUDGET_SECONDS = 240        # tổng thời gian tối đa cho MỘT lời gọi (kể cả thử lại)
+
+# Nếu Gemini lỗi hẳn: tự gọi nhà cung cấp khác NẾU có API key tương ứng trong môi trường
+# (ANTHROPIC_API_KEY / OPENAI_API_KEY). Không có key thì bỏ qua.
+FALLBACK_PROVIDERS = ("claude", "openai")
+
+# Bộ nhớ đệm kết quả gọi model trên đĩa (cùng prompt = trả ngay, không gọi lại).
+LLM_CACHE_ENABLED = True
+CACHE_DIR = __import__("pathlib").Path(__file__).resolve().parents[1] / ".cache" / "llm"
+
+# Bước 5 "AI tự kiểm tra" là lượt gọi dài nhất (đọc lại cả bản thảo + dữ kiện + điều luật) và ít
+# bắt được lỗi thật. True = giữ như cũ. False = bỏ lượt này, thay bằng kiểm tra bằng code
+# (nhanh hơn ~1/4 thời gian, bớt một điểm có thể bị quá tải).
+SELF_CHECK_WITH_AI = True

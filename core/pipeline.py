@@ -17,7 +17,7 @@ from . import model_clients as mc
 from . import prompts as pr
 from . import law_lookup
 from . import phat_bieu
-from .config import GEMINI_STEP_MODELS, MAX_TOKENS_LONG
+from .config import GEMINI_STEP_MODELS, MAX_TOKENS_LONG, SELF_CHECK_WITH_AI
 
 
 def _step_kwargs(step: str, provider: str) -> dict:
@@ -532,6 +532,29 @@ def draft_document(facts_json: str, dieu_luat_lien_quan: str, case_type: str, pr
     )
 
 
+def code_based_check(document: str) -> str:
+    """Phụ lục kiểm tra nội bộ do code lập (không dùng AI): liệt kê các chỗ cần Kiểm sát viên xem lại."""
+    missing = re.findall(r"\[THIẾU DỮ LIỆU[^\]]*\]", document)
+    law_flags = document.count("[CẦN KIỂM TRA LẠI ĐIỀU LUẬT")
+    conflicts = document.count("[TÌNH TIẾT MÂU THUẪN")
+    suggestions = len(_AI_SUGGESTION_PATTERN.findall(document))
+    leftovers = re.findall(r"…\(\d+\)…|\{\{[A-Z_]+\}\}", document)
+    lines = [
+        "--- PHỤ LỤC KIỂM TRA NỘI BỘ ---",
+        f"1. KIỂM TRA DỮ KIỆN: {len(missing)} chỗ đánh dấu [THIẾU DỮ LIỆU]"
+        + (f" ({'; '.join(sorted({m[:60] for m in missing})[:6])})" if missing else "")
+        + f"; {conflicts} chỗ [TÌNH TIẾT MÂU THUẪN]. Các số hiệu, ngày tháng, họ tên được lấy từ dữ kiện hồ sơ; "
+        "Kiểm sát viên đối chiếu lại với bản gốc.",
+        "2. KIỂM TRA CẤU TRÚC: "
+        + ("còn ô mẫu chưa điền: " + ", ".join(sorted(set(leftovers))) if leftovers
+           else "không còn ô mẫu chưa điền."),
+        f"3. KIỂM TRA ĐIỀU LUẬT: {law_flags} chỗ [CẦN KIỂM TRA LẠI ĐIỀU LUẬT]; {suggestions} gợi ý của AI cần "
+        "Kiểm sát viên xác nhận. (Kiểm tra bằng code, không dùng AI.)",
+        "--- HẾT PHỤ LỤC KIỂM TRA NỘI BỘ ---",
+    ]
+    return "\n".join(lines)
+
+
 def self_check(
     draft_text: str,
     facts_json: str,
@@ -539,17 +562,22 @@ def self_check(
     dieu_luat_lien_quan: str,
     provider: str = "gemini",
     ) -> tuple[str, str | None]:
-    prompt = pr.SELF_CHECK_PROMPT.format(
-        draft_text=draft_text,
-        facts_json=facts_json,
-        case_type=case_type,
-        dieu_luat_lien_quan=dieu_luat_lien_quan,
-    )
-    checked_text = mc.call_model(
-        provider, pr.SYSTEM_BASE, prompt, max_tokens=MAX_TOKENS_LONG,
-        **_step_kwargs("self_check", provider),
-    )
+    if SELF_CHECK_WITH_AI:
+        prompt = pr.SELF_CHECK_PROMPT.format(
+            draft_text=draft_text,
+            facts_json=facts_json,
+            case_type=case_type,
+            dieu_luat_lien_quan=dieu_luat_lien_quan,
+        )
+        checked_text = mc.call_model(
+            provider, pr.SYSTEM_BASE, prompt, max_tokens=MAX_TOKENS_LONG,
+            **_step_kwargs("self_check", provider),
+        )
+    else:
+        checked_text = draft_text  # bỏ lượt gọi AI thứ 4: nhanh hơn, không phụ thuộc Gemini ở bước cuối
     document, appendix = split_internal_check(checked_text)
+    if not appendix:
+        appendix = code_based_check(document)
     document = _normalize_legal_terms(document)
     document = _preserve_ai_suggestions(document, draft_text)
     if case_type == "HINH_SU":
